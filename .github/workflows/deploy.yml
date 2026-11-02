@@ -34,4 +34,4 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: bash .github/scripts/deploy.sh dist city.diberlog.ru
+        run: bash .github/scripts/deploy.sh dist urban.diberlog.ru

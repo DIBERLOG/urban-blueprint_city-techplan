@@ -7,10 +7,10 @@
 
 ---
 
-[![🌐 Перейти на сайт](https://img.shields.io/badge/🌐_Перейти-на_сайт-0ea5e9?style=for-the-badge)](https://city.diberlog.ru)
+[![🌐 Перейти на сайт](https://img.shields.io/badge/🌐_Перейти-на_сайт-0ea5e9?style=for-the-badge)](https://urban.diberlog.ru)
 [![💾 Репозиторий](https://img.shields.io/badge/💾_GitHub-Исходники-black?style=for-the-badge&logo=github)](https://github.com/DIBERLOG/urban-blueprint_city-techplan)
 [![🛡️ Лицензия](https://img.shields.io/badge/🛡️_Лицензия-Urban_Blueprint_License_v1.0-334155?style=for-the-badge)](https://github.com/DIBERLOG/urban-blueprint_city-techplan/blob/main/LICENSE.md)
-[![🚀 Production](https://img.shields.io/badge/🚀_Production-city.diberlog.ru-111827?style=for-the-badge)](https://city.diberlog.ru)
+[![🚀 Production](https://img.shields.io/badge/🚀_Production-urban.diberlog.ru-111827?style=for-the-badge)](https://urban.diberlog.ru)
 
 ---
 
@@ -60,7 +60,7 @@
 Карта экспортируется в `JSON` и `PNG`, и копируется как share-ссылка, в которой карта закодирована целиком (без сервера).
 
 ✅ **Production-деплой**  
-Проект размещён на собственном VPS: https://city.diberlog.ru. Серверной части и базы данных нет — всё работает в браузере.
+Проект размещён на собственном VPS: https://urban.diberlog.ru. Серверной части и базы данных нет — всё работает в браузере.
 
 ---
 
@@ -173,7 +173,7 @@ npm run preview
 
 Production:
 
-- `https://city.diberlog.ru`
+- `https://urban.diberlog.ru`
 
 Карты, сохранённые на прежнем адресе (Vercel), переносятся через страницу `/transfer.html`.
 
