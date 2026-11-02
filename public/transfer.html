@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Перенос данных — Urban Blueprint</title>
+<style>
+:root{color-scheme:light dark;--bg:#f4f6fb;--card:#fff;--text:#162033;--muted:#5a6680;--border:#d6dcea;--accent:#0ea5e9;--ok:#047857;--err:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1524;--card:#18203a;--text:#e8edf8;--muted:#9aa6c2;--border:#2c3658;--ok:#6ee7b7;--err:#ff8a9a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:32px 16px 64px}h1{font-size:28px;margin:0 0 8px}h2{font-size:19px;margin:0 0 10px}
+p,li{color:var(--muted)}.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin:18px 0}
+button{font:inherit;padding:10px 18px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+button.secondary{background:transparent;color:var(--text);border-color:var(--border)}button:disabled{opacity:.5;cursor:default}
+pre{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;overflow:auto;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+code{font-size:.92em}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}#status{min-height:1.6em;font-weight:600}
+#status[data-kind=ok]{color:var(--ok)}#status[data-kind=error]{color:var(--err)}a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+ <h1>Перенос карт на новый адрес</h1>
+ <p>Карты и сохранённые версии хранятся только в вашем браузере и привязаны к адресу сайта. С адреса <code>city-techplan-react.vercel.app</code> на <code>city.diberlog.ru</code> они сами не переезжают. Перенос — два шага, данные на старом адресе при этом не удаляются.</p>
+
+ <section class="card">
+  <h2>Шаг 1. Сохранить данные со старого адреса</h2>
+  <ol>
+   <li>Откройте <a href="https://city-techplan-react.vercel.app/" target="_blank" rel="noopener">city-techplan-react.vercel.app</a> в том же браузере, где работали с картами.</li>
+   <li>Откройте консоль: <b>F12</b> → вкладка <b>Console</b> (на Mac — <b>⌥⌘J</b>).</li>
+   <li>Вставьте код ниже и нажмите Enter. Если браузер попросит, сначала напечатайте <code>allow pasting</code>.</li>
+   <li>Скачается файл <code>urban-blueprint-backup.json</code> — текущая карта и все сохранённые версии.</li>
+  </ol>
+  <pre id="snippet"></pre>
+  <div class="row"><button class="secondary" id="copy" type="button">Скопировать код</button></div>
+  <p>Нужна только текущая карта? Можно проще: на старом адресе нажмите «Экспорт JSON», на новом — «Импорт JSON». Сохранённые версии так не переносятся.</p>
+ </section>
+
+ <section class="card">
+  <h2>Шаг 2. Загрузить файл здесь</h2>
+  <p id="here"></p>
+  <div class="row">
+   <button id="pick" type="button">Выбрать urban-blueprint-backup.json</button>
+   <button class="secondary" id="backup" type="button">Скачать копию данных этого адреса</button>
+  </div>
+  <input id="file" type="file" accept="application/json,.json" hidden>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p>Если на этом адресе уже есть данные, перед импортом автоматически скачается их копия. Сохранённые версии объединяются, совпадающие не дублируются. Редактор при следующем сохранении оставляет 12 последних версий — если версий больше, сначала скачайте копию.</p>
+  <p><a href="/">Открыть редактор →</a></p>
+ </section>
+</main>
+<script>
+const STATE_KEY='city-techplan-map-state-v2',HISTORY_KEY='city-techplan-map-history-v2',FORMAT='urban-blueprint-localstorage';
+const snippet=`(()=>{const k=['${STATE_KEY}','${HISTORY_KEY}'];const d={format:'${FORMAT}',version:1,origin:location.origin,exportedAt:new Date().toISOString(),keys:{}};for(const x of k){const v=localStorage.getItem(x);if(v!==null)d.keys[x]=v}const n=Object.keys(d.keys).length;if(!n){console.warn('На этом адресе нет сохранённых карт');return}const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='urban-blueprint-backup.json';a.click();console.log('Сохранено ключей: '+n)})()`;
+const $=id=>document.getElementById(id);
+$('snippet').textContent=snippet;
+const status=(text,kind)=>{$('status').textContent=text;$('status').dataset.kind=kind||'';};
+const read=key=>{try{return localStorage.getItem(key)}catch{return null}};
+const versions=raw=>{try{const v=JSON.parse(raw);return Array.isArray(v)?v:[]}catch{return []}};
+function describe(){
+ const state=read(STATE_KEY),hist=versions(read(HISTORY_KEY));
+ $('here').textContent=state||hist.length?`На этом адресе уже есть: ${state?'текущая карта':'нет текущей карты'}, сохранённых версий — ${hist.length}.`:'На этом адресе пока нет сохранённых карт.';
+}
+function download(){
+ const d={format:FORMAT,version:1,origin:location.origin,exportedAt:new Date().toISOString(),keys:{}};
+ for(const k of [STATE_KEY,HISTORY_KEY]){const v=read(k);if(v!==null)d.keys[k]=v;}
+ if(!Object.keys(d.keys).length)return false;
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));
+ a.download=`urban-blueprint-backup-${location.hostname}-${Date.now()}.json`;a.click();return true;
+}
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(snippet);$('copy').textContent='Скопировано';}catch{$('copy').textContent='Выделите код вручную';}};
+$('backup').onclick=()=>{const saved=download();status(saved?'Копия скачана.':'Здесь нечего сохранять.',saved?'ok':'');};
+$('pick').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+ const file=e.target.files[0];e.target.value='';if(!file)return;
+ try{
+  const data=JSON.parse(await file.text());
+  let incoming={};
+  if(data&&data.format===FORMAT&&data.keys)incoming=data.keys;
+  else if(data&&typeof data==='object'&&!Array.isArray(data))incoming={[STATE_KEY]:JSON.stringify(data)}; // file from the in-app "Экспорт JSON"
+  for(const v of Object.values(incoming))JSON.parse(v); // every value must be valid JSON
+  if(!incoming[STATE_KEY]&&!incoming[HISTORY_KEY])throw new Error('В файле нет карт Urban Blueprint.');
+  const hadData=read(STATE_KEY)!==null||read(HISTORY_KEY)!==null;
+  if(hadData){
+   if(!confirm('На этом адресе уже есть данные. Скачать их копию и заменить текущую карту картой из файла? Сохранённые версии будут объединены.'))return;
+   download();
+  }
+  if(incoming[STATE_KEY])localStorage.setItem(STATE_KEY,incoming[STATE_KEY]);
+  if(incoming[HISTORY_KEY]){
+   const seen=new Set(),merged=[];
+   for(const v of [...versions(incoming[HISTORY_KEY]),...versions(read(HISTORY_KEY))]){const id=v&&v.id;if(id&&seen.has(id))continue;seen.add(id);merged.push(v);}
+   merged.sort((a,b)=>String(b&&b.createdAt).localeCompare(String(a&&a.createdAt)));
+   localStorage.setItem(HISTORY_KEY,JSON.stringify(merged));
+  }
+  describe();
+  const parts=[incoming[STATE_KEY]&&'текущая карта',incoming[HISTORY_KEY]&&`сохранённых версий — ${versions(incoming[HISTORY_KEY]).length}`].filter(Boolean);
+  status(`Готово. Перенесено: ${parts.join(', ')}. Откройте редактор.`,'ok');
+ }catch(err){status(`Не удалось импортировать: ${err.message||err}`,'error');}
+};
+describe();
+</script>
+</body>
+</html>
