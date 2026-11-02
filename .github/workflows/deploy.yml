@@ -27,11 +27,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Supabase URL and publishable key are public (they end up in the bundle); stored as secrets to keep them out of git.
       - name: Type-check and build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
       - name: Deploy, verify, roll back on failure

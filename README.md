@@ -3,14 +3,14 @@
 # 🏙️ Urban Blueprint City Techplan
 ### Интерактивный редактор технического генплана и градостроительных схем
 
-🧭 Веб-проект для создания, редактирования и публикации 2D-схем города в стиле инженерного генплана: зоны, дороги, здания, ворота, служебные элементы и публичные карты.
+🧭 Веб-проект для создания, редактирования и экспорта 2D-схем города в стиле инженерного генплана: зоны, дороги, здания, ворота и служебные элементы.
 
 ---
 
-[![🌐 Перейти на сайт](https://img.shields.io/badge/🌐_Перейти-на_сайт-0ea5e9?style=for-the-badge)](https://city-techplan-react.vercel.app)
+[![🌐 Перейти на сайт](https://img.shields.io/badge/🌐_Перейти-на_сайт-0ea5e9?style=for-the-badge)](https://city.diberlog.ru)
 [![💾 Репозиторий](https://img.shields.io/badge/💾_GitHub-Исходники-black?style=for-the-badge&logo=github)](https://github.com/DIBERLOG/urban-blueprint_city-techplan)
 [![🛡️ Лицензия](https://img.shields.io/badge/🛡️_Лицензия-Urban_Blueprint_License_v1.0-334155?style=for-the-badge)](https://github.com/DIBERLOG/urban-blueprint_city-techplan/blob/main/LICENSE.md)
-[![🚀 Production](https://img.shields.io/badge/🚀_Production-Vercel-111827?style=for-the-badge&logo=vercel)](https://city-techplan-react.vercel.app)
+[![🚀 Production](https://img.shields.io/badge/🚀_Production-city.diberlog.ru-111827?style=for-the-badge)](https://city.diberlog.ru)
 
 ---
 
@@ -25,7 +25,7 @@
 ## 🚀 Описание проекта
 
 **Urban Blueprint City Techplan** — это интерактивный редактор технического генплана города, выполненный в формате строгой 2D-схемы сверху.  
-Проект ориентирован на создание визуально читаемых и редактируемых градостроительных планов в инженерной подаче: тёмный CAD-подобный интерфейс, SVG-карта, редактор зон и объектов, локальные и публичные сохранения.
+Проект ориентирован на создание визуально читаемых и редактируемых градостроительных планов в инженерной подаче: тёмный CAD-подобный интерфейс, SVG-карта, редактор зон и объектов, локальные сохранения и версии.
 
 Редактор позволяет работать с:
 - городскими зонами;
@@ -57,13 +57,10 @@
 Редактор хранит карту в `localStorage`, поддерживает версии сохранений, сброс к базовому состоянию и undo/redo.
 
 ✅ **Экспорт и обмен картой**  
-Карта экспортируется в `JSON` и `PNG`, копируется как локальная share-ссылка и может публиковаться как публичная карта.
-
-✅ **Публичные карты через Supabase**  
-Одна и та же карта может открываться по ссылке `/maps/:id`, а изменения сохраняются в базе.
+Карта экспортируется в `JSON` и `PNG`, и копируется как share-ссылка, в которой карта закодирована целиком (без сервера).
 
 ✅ **Production-деплой**  
-Проект уже развернут на Vercel и готов к использованию как веб-продукт.
+Проект размещён на собственном VPS: https://city.diberlog.ru. Серверной части и базы данных нет — всё работает в браузере.
 
 ---
 
@@ -78,9 +75,7 @@
 | 🧠 Архитектура | Компонентная структура + единый `MapState` |
 | 🎨 UI/UX | CAD-подобный интерфейс, моноширинная подача, адаптивная панель |
 | 💾 Локальные данные | `localStorage`, JSON, история версий |
-| 🌐 Публичные карты | Supabase |
-| 🚀 Деплой | Vercel |
-| 🔒 Конфигурация | `.env`, Vercel env vars, RLS policies |
+| 🚀 Деплой | GitHub Actions → VPS (Caddy) |
 | 🤖 CI | GitHub Actions |
 
 </p>
@@ -93,27 +88,24 @@
 city-techplan-react/
 │
 ├── public/
-│   └── favicon.svg              # иконка проекта
+│   ├── favicon.svg              # иконка проекта
+│   └── transfer.html            # перенос карт из localStorage со старого адреса
 │
 ├── src/
 │   ├── App.tsx                  # основной редактор генплана
 │   ├── cityData.ts              # базовое состояние карты и типы
-│   ├── sharedMap.ts             # публичные карты через Supabase
 │   ├── styles.css               # интерфейс редактора
 │   ├── main.tsx                 # вход React-приложения
 │   └── vite-env.d.ts            # типы env для Vite
 │
-├── supabase/
-│   └── maps.sql                 # таблица и политики доступа для публичных карт
-│
 ├── .github/
 │   └── workflows/
-│       └── ci.yml               # автоматическая проверка сборки в GitHub Actions
+│       ├── ci.yml               # автоматическая проверка сборки в GitHub Actions
+│       └── deploy.yml           # сборка и деплой на VPS
 │
-├── .env.example                 # пример env-переменных
 ├── index.html                   # html-шаблон
 ├── package.json                 # скрипты и зависимости
-├── vercel.json                  # конфигурация деплоя и rewrite для /maps/*
+├── vercel.json                  # конфигурация прежнего деплоя на Vercel
 ├── LICENSE.md                   # лицензия проекта
 └── README.md
 ```
@@ -141,11 +133,7 @@ graph TD
 
     C --> M["Экспорт JSON / PNG"]
 
-    C --> N["Публичная карта"]
-    N --> O["Supabase maps table"]
-    O --> P["Открытие по ссылке /maps/:id"]
-
-    C --> Q["Deploy на Vercel"]
+    C --> Q["Deploy: GitHub Actions → VPS"]
     Q --> R["Production сайт"]
 ```
 
@@ -179,41 +167,15 @@ npm run preview
 
 ---
 
-## 🧪 Настройка Supabase
-
-Создай `.env` по шаблону `.env.example`:
-
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-public-anon-key
-```
-
-Дальше:
-
-1. Создай проект в Supabase.
-2. Выполни SQL из `supabase/maps.sql`.
-3. Добавь те же env-переменные в Vercel.
-4. Перезадеплой production.
-
----
-
 ## 🚀 Деплой
 
-Preview:
-
-```bash
-npm run deploy:preview
-```
+При `push` в `main` GitHub Actions собирает проект (`npm ci`, `npm run build`) и загружает `dist/` на VPS как новый релиз; сервер переключается на него атомарно, при ошибке проверки — откат на предыдущий.
 
 Production:
 
-```bash
-npm run deploy:prod
-```
+- `https://city.diberlog.ru`
 
-Текущий production:
-
-- `https://city-techplan-react.vercel.app`
+Карты, сохранённые на прежнем адресе (Vercel), переносятся через страницу `/transfer.html`.
 
 ---
 

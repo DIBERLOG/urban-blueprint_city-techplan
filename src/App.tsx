@@ -11,7 +11,6 @@ import {
   type RoadData,
   type ZoneData,
 } from "./cityData";
-import { createSharedMap, getSharedMap, hasSupabaseConfig, updateSharedMap } from "./sharedMap";
 
 type SelectedTarget =
   | { kind: "zone"; id: string }
@@ -172,11 +171,6 @@ function ensureMapState(value: unknown): MapState {
       ...(typeof maybe.overlays === "object" && maybe.overlays ? maybe.overlays : {}),
     },
   };
-}
-
-function parseMapIdFromPath(pathname: string) {
-  const match = pathname.match(/^\/maps\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -701,7 +695,6 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragSnapshotRef = useRef<MapState | null>(null);
   const dragChangedRef = useRef(false);
-  const initialMapId = parseMapIdFromPath(window.location.pathname);
   const [mapState, setMapState] = useState<MapState>(() => cloneMapState(initialMapState));
   const [hoveredBuilding, setHoveredBuilding] = useState<string | null>(null);
   const [selected, setSelected] = useState<SelectedTarget | null>({ kind: "building", id: "palace" });
@@ -721,9 +714,8 @@ export default function App() {
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [autosaveLabel, setAutosaveLabel] = useState("Автосохранение активно");
-  const [publicMapId, setPublicMapId] = useState<string | null>(initialMapId);
   const [serverState, setServerState] = useState<"idle" | "loading" | "saving" | "done" | "error">("idle");
-  const [serverMessage, setServerMessage] = useState<string>(hasSupabaseConfig ? "Supabase подключен" : "Supabase не настроен");
+  const [serverMessage, setServerMessage] = useState<string>("Карты хранятся в этом браузере");
 
   const zones = mapState.zones;
   const roads = mapState.roads;
@@ -1252,25 +1244,6 @@ export default function App() {
     }
   };
 
-  const copyPublicMapLink = async () => {
-    if (!publicMapId) {
-      setServerState("error");
-      setServerMessage("Сначала создайте или откройте публичную карту");
-      return;
-    }
-
-    try {
-      const url = new URL(window.location.origin);
-      url.pathname = `/maps/${publicMapId}`;
-      await navigator.clipboard.writeText(url.toString());
-      setServerState("done");
-      setServerMessage("Публичная ссылка скопирована");
-    } catch {
-      setServerState("error");
-      setServerMessage("Не удалось скопировать публичную ссылку");
-    }
-  };
-
   const loadSelectedVersion = () => {
     const version = savedVersions.find((entry) => entry.id === selectedVersionId);
     if (!version) return;
@@ -1365,73 +1338,8 @@ export default function App() {
     }
   };
 
-  const createPublicMapHandler = async () => {
-    if (!hasSupabaseConfig) {
-      setServerState("error");
-      setServerMessage("Добавьте VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY");
-      return;
-    }
-
-    try {
-      setServerState("saving");
-      const row = await createSharedMap(mapState.title, mapState);
-      window.history.pushState({}, "", `/maps/${row.id}`);
-      setPublicMapId(row.id);
-      setServerState("done");
-      setServerMessage(`Публичная карта создана: ${row.id}`);
-    } catch (error) {
-      setServerState("error");
-      setServerMessage(error instanceof Error ? error.message : "Не удалось создать публичную карту");
-    }
-  };
-
-  const savePublicMapHandler = async () => {
-    if (!publicMapId) {
-      setServerState("error");
-      setServerMessage("Сначала создайте публичную карту");
-      return;
-    }
-    if (!hasSupabaseConfig) {
-      setServerState("error");
-      setServerMessage("Добавьте VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY");
-      return;
-    }
-
-    try {
-      setServerState("saving");
-      const row = await updateSharedMap(publicMapId, mapState.title, mapState);
-      setServerState("done");
-      setServerMessage(`Карта сохранена на сервере: ${new Date(row.updated_at ?? Date.now()).toLocaleString()}`);
-    } catch (error) {
-      setServerState("error");
-      setServerMessage(error instanceof Error ? error.message : "Не удалось сохранить карту");
-    }
-  };
-
   useEffect(() => {
     const load = async () => {
-      if (initialMapId) {
-        if (!hasSupabaseConfig) {
-          setServerState("error");
-          setServerMessage("Маршрут карты открыт, но Supabase не настроен");
-          return;
-        }
-        try {
-          setServerState("loading");
-          const row = await getSharedMap(initialMapId);
-          const next = ensureMapState({ ...row.data, title: row.title || row.data.title });
-          setMapState(next);
-          persistSnapshot(next);
-          setPublicMapId(row.id);
-          setServerState("done");
-          setServerMessage(`Загружена публичная карта ${row.id}`);
-          return;
-        } catch (error) {
-          setServerState("error");
-          setServerMessage(error instanceof Error ? error.message : "Не удалось загрузить публичную карту");
-        }
-      }
-
       const shared = new URLSearchParams(window.location.search).get(SHARE_PARAM);
       if (shared) {
         const parsedShared = decodeMapState(shared);
@@ -1463,7 +1371,7 @@ export default function App() {
     };
 
     void load();
-  }, [initialMapId]);
+  }, []);
 
   useEffect(() => {
     persistSnapshot(mapState);
@@ -1649,7 +1557,7 @@ export default function App() {
             <div className="stat-chip"><span>Зоны</span><strong>{zones.length}</strong></div>
             <div className="stat-chip"><span>Дороги</span><strong>{roads.length}</strong></div>
             <div className="stat-chip"><span>Объекты</span><strong>{buildings.length + gates.length}</strong></div>
-            <div className={`stat-chip state-${serverState}`}><span>Сервер</span><strong>{serverMessage}</strong></div>
+            <div className={`stat-chip state-${serverState}`}><span>Статус</span><strong>{serverMessage}</strong></div>
           </div>
         </header>
 
@@ -1866,8 +1774,8 @@ export default function App() {
         <div className="panel-block">
           <div className="panel-kicker">РЕЖИМ</div>
           <h2>Редактор генплана</h2>
-          <p>Карта хранится локально, может экспортироваться в JSON и PNG, а также публиковаться через Supabase по маршруту `/maps/:mapId`.</p>
-          <p className="meta-line">Статус сервера: {serverState} · {serverMessage}</p>
+          <p>Карта хранится локально в этом браузере и может экспортироваться в JSON и PNG.</p>
+          <p className="meta-line">Статус: {serverMessage}</p>
           <div className="panel-status-grid">
             <div className="mini-stat"><span>Выбор</span><strong>{selectedSummary}</strong></div>
             <div className="mini-stat"><span>Hotkeys</span><strong>Ctrl/Cmd+S · Ctrl/Cmd+Z · Del</strong></div>
@@ -1989,10 +1897,6 @@ export default function App() {
             <label>Legend Y<input type="number" value={overlays.legendPosition.y} onChange={(event) => updateOverlayPosition("legend", { ...overlays.legendPosition, y: Number(event.target.value) })} /></label>
             <label>Stamp X<input type="number" value={overlays.stampPosition.x} onChange={(event) => updateOverlayPosition("stamp", { ...overlays.stampPosition, x: Number(event.target.value) })} /></label>
             <label>Stamp Y<input type="number" value={overlays.stampPosition.y} onChange={(event) => updateOverlayPosition("stamp", { ...overlays.stampPosition, y: Number(event.target.value) })} /></label>
-            <button type="button" onClick={createPublicMapHandler}>Создать публичную карту</button>
-            <button type="button" onClick={savePublicMapHandler} disabled={!publicMapId}>Сохранить публичную карту</button>
-            <button type="button" onClick={copyPublicMapLink} disabled={!publicMapId}>Копировать публичную ссылку</button>
-            {publicMapId ? <p className="meta-line">mapId: {publicMapId}</p> : null}
             {selectedOverlay ? <p className="meta-line">Выбран overlay: {selectedOverlay}</p> : null}
           </div>
         ) : null}
