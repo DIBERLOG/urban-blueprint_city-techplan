@@ -1,0 +1,13 @@
+/* Styles of the legal pages (privacy.html, consent.html, terms.html, cookies.html). */
+:root{color-scheme:light dark;--bg:#f5f7fb;--text:#1b2433;--muted:#566175;--accent:#1f7a6d;--card:#fff;--border:#d9dee8}
+@media (prefers-color-scheme:dark){:root{--bg:#0f141c;--text:#e6ebf2;--muted:#9aa6b8;--accent:#4adbc5;--card:#161d28;--border:#283244}}
+*{box-sizing:border-box}
+body.legal-page{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.legal-document{max-width:780px;margin:0 auto;padding:32px 20px 64px}
+.legal-document h1{font-size:clamp(28px,6vw,40px);line-height:1.2;margin:16px 0 20px}
+.legal-document h2{font-size:19px;margin:28px 0 6px}
+.legal-document p{margin:0 0 12px}
+.legal-document section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:4px 20px 12px;margin:14px 0}
+.legal-document a{color:var(--accent);text-underline-offset:3px}
+.legal-links{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:24px}
+.legal-links a{min-height:44px;display:inline-flex;align-items:center}
