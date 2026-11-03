@@ -563,13 +563,19 @@ textarea {
 }
 
 .landing main,
-.landing-bar,
-.landing-footer {
+.landing-bar {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
   padding-left: 24px;
   padding-right: 24px;
+}
+
+/* Без боковых отступов, чтобы линия над подвалом совпадала с линиями секций. */
+.landing-footer {
+  width: calc(100% - 48px);
+  max-width: 1152px;
+  margin: 0 auto;
 }
 
 .landing-bar {
@@ -794,10 +800,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 20px;
-}
-
-.landing-legal:empty {
-  display: none;
+  flex-basis: 100%;
 }
 
 @media (max-width: 900px) {
@@ -810,10 +813,13 @@ textarea {
 
 @media (max-width: 560px) {
   .landing main,
-  .landing-bar,
-  .landing-footer {
+  .landing-bar {
     padding-left: 16px;
     padding-right: 16px;
+  }
+
+  .landing-footer {
+    width: calc(100% - 32px);
   }
 
   .landing h1 {

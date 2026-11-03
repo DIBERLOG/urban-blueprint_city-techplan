@@ -146,11 +146,18 @@ export default function Landing({ onOpenEditor }: { onOpenEditor: () => void }) 
 
       <footer className="landing-footer">
         <span>© DIBERLOG · Urban Blueprint</span>
+        <a href="mailto:workbook.ea@mail.ru">workbook.ea@mail.ru</a>
+        <a href="https://t.me/Diberlog_bot" target="_blank" rel="noopener noreferrer">
+          Написать в Telegram
+        </a>
         <a href="https://github.com/DIBERLOG/urban-blueprint_city-techplan" target="_blank" rel="noopener noreferrer">
           Исходники на GitHub
         </a>
-        {/* Место под ссылки на юридические документы (политика конфиденциальности, cookies). */}
-        <nav className="landing-legal" aria-label="Документы" />
+        <nav className="landing-legal" aria-label="Документы">
+          <a href="/privacy.html">Политика конфиденциальности</a>
+          <a href="/cookies.html">Политика cookies</a>
+          <a href="/terms.html">Пользовательское соглашение</a>
+        </nav>
       </footer>
     </div>
   );
