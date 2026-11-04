@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   cloneMapState,
   initialMapState,
@@ -22,6 +22,7 @@ import {
   readHistory,
   copyTarget,
   encodeMapState,
+  findJunctions,
   ensureMapState,
   nudgeTarget,
   parsePoints,
@@ -33,9 +34,80 @@ import {
   type SelectedTarget,
   type ZoneHandle,
 } from "./mapState";
-import { BuildingShape, CompassAndScale, Gate, Legend, MapBackdrop, River, Road, TitleStamp, ZoneBlock } from "./mapShapes";
+import {
+  ChevronDown,
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
+  DoorOpen,
+  Download,
+  Building2,
+  Eraser,
+  FileJson,
+  History,
+  Image as ImageIcon,
+  Link2,
+  Maximize2,
+  MousePointer2,
+  Plus,
+  Redo2,
+  RotateCcw,
+  Route,
+  Save,
+  Scissors,
+  Search,
+  Spline,
+  SquareDashed,
+  Trash2,
+  Trees,
+  Undo2,
+  Upload,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import {
+  BuildingShape,
+  CompassAndScale,
+  FormThumb,
+  Gate,
+  Junctions,
+  Legend,
+  MapBackdrop,
+  River,
+  Road,
+  SelectionFrame,
+  TitleStamp,
+  ZoneBlock,
+  buildingForms,
+  formLabel,
+  formSize,
+} from "./mapShapes";
 
 type PanelSection = "zone" | "road" | "building" | "gate" | "service" | "library";
+
+const ZONE_COLORS = ["#fbbf24", "#06b6d4", "#10b981", "#ef4444", "#8b5cf6", "#f472b6", "#a3e635", "#fb923c", "#38bdf8", "#94a3b8"];
+const SWATCHES = ["#fbbf24", "#f59e0b", "#fb923c", "#ef4444", "#f472b6", "#8b5cf6", "#38bdf8", "#06b6d4", "#10b981", "#22c55e", "#a3e635", "#94a3b8"];
+
+const normalizeAngle = (angle = 0) => ((Math.round(angle) % 360) + 360) % 360;
+
+/** Закрыть всплывающее меню по клику мимо него или по Escape. */
+function useDismiss(ref: React.RefObject<HTMLElement>, open: boolean, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) close();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [ref, open, close]);
+}
 type ToolMode = "select" | "delete";
 type ZoneEditMode = "none" | "zone-only-move" | "zone-with-buildings" | "zone-resize";
 
@@ -124,7 +196,7 @@ export default function App({ onHome }: { onHome: () => void }) {
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>("select");
   const [zoneEditMode, setZoneEditMode] = useState<ZoneEditMode>("none");
-  const [panelSection, setPanelSection] = useState<PanelSection>("service");
+  const [panelSection, setPanelSection] = useState<PanelSection>("building");
   const [savedVersions, setSavedVersions] = useState<SavedVersion[]>(() => readHistory(localStorage));
   const [selectedVersionId, setSelectedVersionId] = useState<string>(() => readHistory(localStorage)[0]?.id ?? "");
   const [undoStack, setUndoStack] = useState<MapState[]>([]);
@@ -135,7 +207,14 @@ export default function App({ onHome }: { onHome: () => void }) {
   const [copyState, setCopyState] = useState<"idle" | "done">("idle");
   const [shareState, setShareState] = useState<"idle" | "done" | "error">("idle");
   const [exportState, setExportState] = useState<"idle" | "png">("idle");
-  const [toolbarOpen, setToolbarOpen] = useState(false);
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const fileMenuRef = useRef<HTMLDivElement | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+  const closeFileMenu = useCallback(() => setFileMenuOpen(false), []);
+  const closeAddMenu = useCallback(() => setAddMenuOpen(false), []);
+  useDismiss(fileMenuRef, fileMenuOpen, closeFileMenu);
+  useDismiss(addMenuRef, addMenuOpen, closeAddMenu);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [autosaveLabel, setAutosaveLabel] = useState("Автосохранение активно");
   const [serverState, setServerState] = useState<"idle" | "loading" | "saving" | "done" | "error">("idle");
@@ -179,15 +258,11 @@ export default function App({ onHome }: { onHome: () => void }) {
       .filter((group) => group.items.length);
   }, [libraryQuery, zones, roads, gates, buildings]);
 
-  const activeSection: PanelSection = selectedZone
-    ? "zone"
-    : selectedRoad
-      ? "road"
-      : selectedBuilding
-        ? "building"
-        : selectedGate
-          ? "gate"
-          : panelSection;
+  // Вкладки «Карта» и «Объекты» открываются и при выделенном объекте; иначе показываем свойства выделенного.
+  const selectedSection: PanelSection | null = selectedZone ? "zone" : selectedRoad ? "road" : selectedBuilding ? "building" : selectedGate ? "gate" : null;
+  const activeSection: PanelSection = panelSection === "service" || panelSection === "library" ? panelSection : selectedSection ?? panelSection;
+  const inspectorOpen = activeSection !== "service" && activeSection !== "library";
+  const junctions = useMemo(() => findJunctions(roads), [roads]);
 
   const createSnapshot = () => cloneMapState(mapState);
 
@@ -383,7 +458,7 @@ export default function App({ onHome }: { onHome: () => void }) {
           wingDepth: form === "t" ? building.wingDepth ?? Math.round(building.height * 0.42) : building.wingDepth,
           innerInset: form === "courtyard" ? building.innerInset ?? Math.round(Math.min(building.width, building.height) * 0.22) : building.innerInset,
           topWidth: form === "trapezoid" ? building.topWidth ?? Math.round(building.width * 0.72) : building.topWidth,
-          segmentCount: form === "segmented-bar" ? building.segmentCount ?? 4 : building.segmentCount,
+          segmentCount: form === "segmented-bar" || form === "terrace" ? building.segmentCount ?? (form === "terrace" ? 5 : 4) : building.segmentCount,
           bayCount: form === "depot" || form === "sawtooth" ? building.bayCount ?? 4 : building.bayCount,
         };
       }),
@@ -494,36 +569,47 @@ export default function App({ onHome }: { onHome: () => void }) {
     setDragState({ kind: "overlay", id, start: point, origin: id === "legend" ? overlays.legendPosition : overlays.stampPosition });
   };
 
-  const addBuilding = () => {
-    const zoneId = selectedZone?.id ?? selectedBuilding?.zoneId ?? zones[0]?.id ?? "zone";
-    const zone = zones.find((entry) => entry.id === zoneId) ?? zones[0];
-    const requestedLabel = window.prompt("Название нового здания", "НОВОЕ ЗДАНИЕ");
-    if (!zone) return;
+  const focusLabelField = () => {
+    // Новый объект сразу можно переименовать: фокус в поле подписи, текст выделен.
+    window.setTimeout(() => {
+      const field = document.querySelector<HTMLInputElement>("[data-label-field]");
+      field?.focus();
+      field?.select();
+    }, 0);
+  };
+
+  const GREEN_FORMS = new Set<BuildingForm>(["park", "square", "forest", "garden", "tree-cluster", "buffer-strip"]);
+
+  const addObject = (form: BuildingForm) => {
+    const zoneId = selectedZone?.id ?? selectedBuilding?.zoneId ?? zones[0]?.id;
+    const zone = zones.find((entry) => entry.id === zoneId);
+    const size = formSize[form] ?? { width: 100, height: 60 };
+    const step = (buildings.filter((entry) => entry.zoneId === zone?.id).length % 6) * GRID_STEP * 2;
     const newBuilding: BuildingData = {
       id: `building-${Date.now()}`,
-      zoneId: zone.id,
-      label: requestedLabel?.trim() ? requestedLabel.trim() : "НОВОЕ ЗДАНИЕ",
-      color: zone.color,
-      form: "rect",
-      x: snap(zone.x + 40),
-      y: snap(zone.y + 60),
-      width: 100,
-      height: 50,
+      zoneId: zone?.id ?? "",
+      label: formLabel(form).toUpperCase(),
+      color: GREEN_FORMS.has(form) ? "#22c55e" : form === "pond" ? "#38bdf8" : zone?.color ?? "#7dd3fc",
+      form,
+      rotation: 0,
+      x: snap((zone ? zone.x + 40 : 900) + step),
+      y: snap((zone ? zone.y + 60 : 760) + step),
+      ...size,
     };
     commitStateChange(() => {
       setMapState((current) => ({ ...current, buildings: [...current.buildings, newBuilding] }));
       setSelected({ kind: "building", id: newBuilding.id });
       setPanelSection("building");
     });
+    setAddMenuOpen(false);
+    focusLabelField();
   };
 
   const addZone = () => {
-    const requestedTitle = window.prompt("Название новой зоны", "НОВАЯ ЗОНА");
-    const requestedColor = window.prompt("Цвет новой зоны", "#22c55e");
     const newZone: ZoneData = {
       id: `zone-${Date.now()}`,
-      title: requestedTitle?.trim() ? requestedTitle.trim() : "НОВАЯ ЗОНА",
-      color: requestedColor?.trim() ? requestedColor.trim() : "#22c55e",
+      title: "НОВАЯ ЗОНА",
+      color: ZONE_COLORS[zones.length % ZONE_COLORS.length],
       x: 760,
       y: 1080,
       width: 280,
@@ -534,13 +620,14 @@ export default function App({ onHome }: { onHome: () => void }) {
       setSelected({ kind: "zone", id: newZone.id });
       setPanelSection("zone");
     });
+    setAddMenuOpen(false);
+    focusLabelField();
   };
 
   const createRoad = (major: boolean) => {
-    const requestedLabel = window.prompt(major ? "Название новой магистрали" : "Название новой дороги", major ? "НОВАЯ МАГИСТРАЛЬ" : "НОВАЯ ДОРОГА");
     const newRoad: RoadData = {
       id: `road-${Date.now()}`,
-      label: requestedLabel?.trim() ? requestedLabel.trim() : major ? "НОВАЯ МАГИСТРАЛЬ" : "НОВАЯ ДОРОГА",
+      label: major ? "НОВАЯ МАГИСТРАЛЬ" : "НОВАЯ ДОРОГА",
       width: major ? 30 : 18,
       major,
       points: [{ x: 720, y: 1180 }, { x: 960, y: 1180 }],
@@ -550,61 +637,14 @@ export default function App({ onHome }: { onHome: () => void }) {
       setSelected({ kind: "road", id: newRoad.id });
       setPanelSection("road");
     });
-  };
-
-  const addPark = () => {
-    const zoneId = selectedZone?.id ?? selectedBuilding?.zoneId ?? zones[0]?.id ?? "zone";
-    const zone = zones.find((entry) => entry.id === zoneId) ?? zones[0];
-    if (!zone) return;
-    const requestedLabel = window.prompt("Название нового парка", "ПАРК");
-    const newBuilding: BuildingData = {
-      id: `park-${Date.now()}`,
-      zoneId: zone.id,
-      label: requestedLabel?.trim() ? requestedLabel.trim() : "ПАРК",
-      color: "#22c55e",
-      form: "park",
-      x: snap(zone.x + 60),
-      y: snap(zone.y + 90),
-      width: 120,
-      height: 80,
-      rotation: 0,
-    };
-    commitStateChange(() => {
-      setMapState((current) => ({ ...current, buildings: [...current.buildings, newBuilding] }));
-      setSelected({ kind: "building", id: newBuilding.id });
-      setPanelSection("building");
-    });
-  };
-
-  const addTrees = () => {
-    const zoneId = selectedZone?.id ?? selectedBuilding?.zoneId ?? zones[0]?.id ?? "zone";
-    const zone = zones.find((entry) => entry.id === zoneId) ?? zones[0];
-    if (!zone) return;
-    const requestedLabel = window.prompt("Название новой группы деревьев", "ДЕРЕВЬЯ");
-    const newBuilding: BuildingData = {
-      id: `trees-${Date.now()}`,
-      zoneId: zone.id,
-      label: requestedLabel?.trim() ? requestedLabel.trim() : "ДЕРЕВЬЯ",
-      color: "#6ee7b7",
-      form: "tree-cluster",
-      rotation: 0,
-      x: snap(zone.x + 60),
-      y: snap(zone.y + 90),
-      width: 96,
-      height: 72,
-    };
-    commitStateChange(() => {
-      setMapState((current) => ({ ...current, buildings: [...current.buildings, newBuilding] }));
-      setSelected({ kind: "building", id: newBuilding.id });
-      setPanelSection("building");
-    });
+    setAddMenuOpen(false);
+    focusLabelField();
   };
 
   const addGate = () => {
-    const requestedLabel = window.prompt("Название новых ворот", "НОВЫЕ ВОРОТА");
     const newGate: GateData = {
       id: `gate-${Date.now()}`,
-      label: requestedLabel?.trim() ? requestedLabel.trim() : "НОВЫЕ ВОРОТА",
+      label: "НОВЫЕ ВОРОТА",
       x: 400,
       y: 80,
       width: 60,
@@ -618,6 +658,8 @@ export default function App({ onHome }: { onHome: () => void }) {
       setSelected({ kind: "gate", id: newGate.id });
       setPanelSection("gate");
     });
+    setAddMenuOpen(false);
+    focusLabelField();
   };
 
   const savePlan = () => {
@@ -968,82 +1010,138 @@ export default function App({ onHome }: { onHome: () => void }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   });
 
+  const objectSelected = Boolean(selected && selected.kind !== "overlay");
+  const formGroups = (["Здания", "Особые", "Зелень и вода"] as const).map((group) => ({ group, forms: buildingForms.filter((entry) => entry.group === group) }));
+  const numberField = (label: string, value: number, onChange: (value: number) => void, extra?: { min?: number; max?: number; step?: number }) => (
+    <label className="field">
+      <span>{label}</span>
+      <input type="number" value={value} {...extra} onChange={(event) => onChange(Number(event.target.value))} />
+    </label>
+  );
+  const colorField = (value: string, onChange: (value: string) => void) => (
+    <div className="field">
+      <span>Цвет</span>
+      <div className="swatches">
+        {SWATCHES.map((swatch) => (
+          <button key={swatch} type="button" className={`swatch${swatch.toLowerCase() === value.toLowerCase() ? " is-active" : ""}`} style={{ background: swatch }} aria-label={`Цвет ${swatch}`} onClick={() => onChange(swatch)} />
+        ))}
+        <label className="swatch swatch-custom" title="Свой цвет">
+          <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#7dd3fc"} onChange={(event) => onChange(event.target.value)} aria-label="Свой цвет" />
+        </label>
+      </div>
+    </div>
+  );
+
   return (
     <div className="app-shell editor-shell">
       <div className="workspace-column">
-        <header className="workspace-header">
-          <div className="workspace-copy">
-            <div className="workspace-kicker">
-              <a
-                className="workspace-home"
-                href="./"
-                onClick={(event) => {
-                  event.preventDefault();
-                  onHome();
-                }}
-              >
-                Urban Blueprint
-              </a>{" "}
-              · Градостроительный редактор
-            </div>
+        <header className="ed-topbar">
+          <a
+            className="ed-brand"
+            href="./"
+            onClick={(event) => {
+              event.preventDefault();
+              onHome();
+            }}
+          >
+            <img src="/favicon.svg" alt="" width={24} height={24} />
+            Urban Blueprint
+          </a>
+          <div className="ed-title">
             <h1>{mapState.title}</h1>
-            <p>Рабочая схема, инспектор свойств и экспорт в единый поток без прокрутки всей страницы.</p>
+            <span className="ed-meta">
+              {zones.length} зон · {roads.length} дорог · {buildings.length + gates.length} объектов
+            </span>
           </div>
-          <div className="workspace-stats">
-            <div className="stat-chip"><span>Зоны</span><strong>{zones.length}</strong></div>
-            <div className="stat-chip"><span>Дороги</span><strong>{roads.length}</strong></div>
-            <div className="stat-chip"><span>Объекты</span><strong>{buildings.length + gates.length}</strong></div>
-            <div className={`stat-chip state-${serverState}`}><span>Статус</span><strong>{serverMessage}</strong></div>
+          <span className={`ed-status state-${serverState}`}>{serverState === "error" ? serverMessage : autosaveLabel}</span>
+          <div className="ed-zoom" role="group" aria-label="Масштаб">
+            <button type="button" className="icon-btn" title="Уменьшить" onClick={() => setZoomLevel((current) => Math.max(0.55, Number((current - 0.1).toFixed(2))))}><ZoomOut size={16} /></button>
+            <button type="button" className="ed-zoom-value" title="Масштаб 100%" onClick={() => setZoomLevel(1)}>{zoomPercent}%</button>
+            <button type="button" className="icon-btn" title="Увеличить" onClick={() => setZoomLevel((current) => Math.min(1.8, Number((current + 0.1).toFixed(2))))}><ZoomIn size={16} /></button>
+            <button type="button" className="icon-btn" title="Вписать" onClick={() => setZoomLevel(0.82)}><Maximize2 size={16} /></button>
           </div>
+          <div className="menu-anchor" ref={fileMenuRef}>
+            <button type="button" className="btn" aria-expanded={fileMenuOpen} onClick={() => setFileMenuOpen((open) => !open)}>
+              Файл <ChevronDown size={16} />
+            </button>
+            {fileMenuOpen ? (
+              <div className="menu" role="menu">
+                <button type="button" role="menuitem" onClick={() => { exportPng(); setFileMenuOpen(false); }} disabled={exportState === "png"}><ImageIcon size={16} />{exportState === "png" ? "Экспорт…" : "Экспорт PNG"}</button>
+                <button type="button" role="menuitem" onClick={() => { exportJson(); setFileMenuOpen(false); }}><Download size={16} />Экспорт JSON</button>
+                <button type="button" role="menuitem" onClick={() => { importJson(); setFileMenuOpen(false); }}><Upload size={16} />Импорт JSON</button>
+                <div className="menu-sep" />
+                <button type="button" role="menuitem" onClick={copyShareLink}><Link2 size={16} />{shareState === "done" ? "Ссылка скопирована" : shareState === "error" ? "Не удалось скопировать" : "Копировать ссылку карты"}</button>
+                <button type="button" role="menuitem" onClick={copyPlan}><FileJson size={16} />{copyState === "done" ? "Скопировано" : "Копировать JSON"}</button>
+                <div className="menu-sep" />
+                <button type="button" role="menuitem" className="danger" onClick={() => { setFileMenuOpen(false); resetToInitial(); }}><RotateCcw size={16} />Сбросить к примеру</button>
+              </div>
+            ) : null}
+          </div>
+          <button type="button" className="btn btn-primary" onClick={savePlan} title="Ctrl+S">
+            <Save size={16} />
+            <span className="btn-label">{copyState === "done" ? "Сохранено" : "Сохранить"}</span>
+          </button>
         </header>
 
-        <div className={`toolbar-frame ${toolbarOpen ? "open" : "collapsed"}`}>
-          <div className="toolbar-topbar">
-            <button type="button" className="toolbar-toggle" onClick={() => setToolbarOpen((current) => !current)}>
-              {toolbarOpen ? "Скрыть инструменты" : "Показать инструменты"}
+        <div className="ed-toolbar" role="toolbar" aria-label="Инструменты">
+          <div className="tool-group">
+            <button type="button" className="icon-btn" title="Отменить · Ctrl+Z" onClick={undoLastAction} disabled={!undoStack.length}><Undo2 size={16} /></button>
+            <button type="button" className="icon-btn" title="Повторить · Ctrl+Shift+Z" onClick={redoLastAction} disabled={!redoStack.length}><Redo2 size={16} /></button>
+          </div>
+          <div className="tool-group">
+            <button type="button" className="icon-btn" title="Копировать · Ctrl+C" onClick={copySelected} disabled={!objectSelected}><Copy size={16} /></button>
+            <button type="button" className="icon-btn" title="Вырезать · Ctrl+X" onClick={cutSelected} disabled={!objectSelected}><Scissors size={16} /></button>
+            <button type="button" className="icon-btn" title="Вставить · Ctrl+V" onClick={pasteClipboard} disabled={!clipboardItem}><ClipboardPaste size={16} /></button>
+            <button type="button" className="icon-btn" title="Дублировать · Ctrl+D" onClick={duplicateSelected} disabled={!objectSelected}><CopyPlus size={16} /></button>
+          </div>
+          <div className="tool-group segmented" role="group" aria-label="Режим">
+            <button type="button" className={toolMode === "select" ? "is-active" : ""} onClick={() => setToolMode("select")}><MousePointer2 size={16} />Выбор</button>
+            <button type="button" className={toolMode === "delete" ? "is-active is-danger" : ""} onClick={() => setToolMode(toolMode === "delete" ? "select" : "delete")}><Eraser size={16} />Удаление</button>
+          </div>
+          <label className="tool-toggle" title="Разрешить зданиям заходить на дороги">
+            <input type="checkbox" checked={ignoreRoads} onChange={(event) => setIgnoreRoads(event.target.checked)} />
+            Через дороги
+          </label>
+          <div className="tool-spacer" />
+          <div className="tool-group tool-add">
+            <button type="button" className="btn" onClick={addZone}><SquareDashed size={16} />Зона</button>
+            <button type="button" className="btn" onClick={() => createRoad(false)}><Spline size={16} />Дорога</button>
+            <button type="button" className="btn" onClick={() => addObject("rect")}><Building2 size={16} />Здание</button>
+            <button type="button" className="btn" onClick={() => addObject("park")}><Trees size={16} />Парк</button>
+          </div>
+          <div className="menu-anchor" ref={addMenuRef}>
+            <button type="button" className="btn btn-accent" aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)}>
+              <Plus size={16} />
+              Каталог
             </button>
-            <div className="toolbar-topbar-group">
-              <button type="button" onClick={() => setZoomLevel((current) => Math.max(0.55, Number((current - 0.1).toFixed(2))))}>-</button>
-              <button type="button" onClick={() => setZoomLevel(1)}>{zoomPercent}%</button>
-              <button type="button" onClick={() => setZoomLevel((current) => Math.min(1.8, Number((current + 0.1).toFixed(2))))}>+</button>
-              <button type="button" onClick={() => setZoomLevel(0.82)}>Fit</button>
-            </div>
-            <div className="toolbar-topbar-status">{autosaveLabel}</div>
+            {addMenuOpen ? (
+              <div className="menu menu-catalog" role="dialog" aria-label="Каталог объектов">
+                <div className="catalog-row">
+                  <button type="button" onClick={addZone}><SquareDashed size={16} />Зона</button>
+                  <button type="button" onClick={() => createRoad(false)}><Spline size={16} />Дорога</button>
+                  <button type="button" onClick={() => createRoad(true)}><Route size={16} />Магистраль</button>
+                  <button type="button" onClick={addGate}><DoorOpen size={16} />Ворота</button>
+                </div>
+                {formGroups.map(({ group, forms }) => (
+                  <section key={group} className="catalog-group">
+                    <h3>{group}</h3>
+                    <div className="form-grid">
+                      {forms.map((entry) => (
+                        <button key={entry.form} type="button" className="form-tile" onClick={() => addObject(entry.form)}>
+                          <FormThumb form={entry.form} color={selectedZone?.color ?? "#7dd3fc"} />
+                          <span>{entry.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : null}
           </div>
-        <div className="editor-toolbar">
-          <div className="toolbar-cluster">
-            <button type="button" onClick={undoLastAction} disabled={!undoStack.length}>Отменить</button>
-            <button type="button" onClick={redoLastAction} disabled={!redoStack.length}>Повторить</button>
-            <button type="button" onClick={copySelected} disabled={!selected || selected.kind === "overlay"}>Копировать</button>
-            <button type="button" onClick={cutSelected} disabled={!selected || selected.kind === "overlay"}>Вырезать</button>
-            <button type="button" onClick={pasteClipboard} disabled={!clipboardItem}>Вставить</button>
-            <button type="button" onClick={duplicateSelected} disabled={!selected || selected.kind === "overlay"}>Дублировать</button>
-            <button type="button" className={toolMode === "select" ? "active" : ""} onClick={() => setToolMode("select")}>Режим выбора</button>
-            <button type="button" className={toolMode === "delete" ? "danger active" : "danger"} onClick={() => setToolMode(toolMode === "delete" ? "select" : "delete")}>Режим удаления</button>
-            <button type="button" className={ignoreRoads ? "active" : ""} onClick={() => setIgnoreRoads((current) => !current)}>{ignoreRoads ? "Дороги игнорируются" : "Игнорировать дороги"}</button>
-          </div>
-          <div className="toolbar-cluster">
-            <button type="button" onClick={addZone}>Добавить зону</button>
-            <button type="button" onClick={addBuilding}>Добавить здание</button>
-            <button type="button" onClick={addPark}>Добавить парк</button>
-            <button type="button" onClick={addTrees}>Добавить деревья</button>
-            <button type="button" onClick={() => createRoad(false)}>Добавить дорогу</button>
-            <button type="button" onClick={() => createRoad(true)}>Добавить магистраль</button>
-            <button type="button" onClick={addGate}>Добавить ворота</button>
-            <button type="button" onClick={copyPlan}>{copyState === "done" ? "Скопировано" : "Копировать JSON"}</button>
-            <button type="button" onClick={copyShareLink}>{shareState === "done" ? "Ссылка скопирована" : shareState === "error" ? "Не удалось скопировать" : "Копировать ссылку карты"}</button>
-            <button type="button" onClick={exportJson}>Экспорт JSON</button>
-            <button type="button" onClick={importJson}>Импорт JSON</button>
-            <button type="button" onClick={exportPng} disabled={exportState === "png"}>{exportState === "png" ? "Экспорт..." : "Экспорт PNG"}</button>
-            <button type="button" onClick={savePlan}>Сохранить</button>
-            <button type="button" onClick={loadSelectedVersion} disabled={!selectedVersionId}>Загрузить</button>
-            <button type="button" className="danger" onClick={resetToInitial}>Сбросить</button>
-          </div>
-        </div>
         </div>
 
         <div className="board editor-board" onPointerDownCapture={() => { fieldEditArmedRef.current = false; }}>
-          <div className="canvas-stage" style={{ ["--canvas-zoom" as string]: String(zoomLevel) }}>
+          <div className={`canvas-stage${toolMode === "delete" ? " is-deleting" : ""}`} style={{ ["--canvas-zoom" as string]: String(zoomLevel) }}>
             <svg ref={svgRef} viewBox="0 0 2200 1700" role="img" aria-label={mapState.title}>
             <MapBackdrop />
 
@@ -1063,6 +1161,8 @@ export default function App({ onHome }: { onHome: () => void }) {
                 onDragStart={handleRoadDragStart}
               />
             ))}
+
+            <Junctions junctions={junctions} />
 
             {zones.map((zone) => (
               <ZoneBlock
@@ -1115,22 +1215,6 @@ export default function App({ onHome }: { onHome: () => void }) {
               />
             ))}
 
-            {selectedRoad ? (
-              <g>
-                {selectedRoad.points.map((point, index) => (
-                  <circle key={`${selectedRoad.id}-${index}`} cx={point.x} cy={point.y} r={10} fill="#f8fafc" stroke="#0f1a25" strokeWidth={3} style={{ cursor: "grab", touchAction: "none" }} onPointerDown={(event) => handleRoadPointDragStart(event, selectedRoad, index)} />
-                ))}
-              </g>
-            ) : null}
-
-            {selectedZone && zoneEditMode === "zone-resize" ? (
-              <g>
-                {getZoneHandles(selectedZone).map((handle) => (
-                  <rect key={handle.handle} x={handle.x - 8} y={handle.y - 8} width={16} height={16} rx={2} fill="#f8fafc" stroke={selectedZone.color} strokeWidth={2} style={{ cursor: handle.cursor, touchAction: "none" }} onPointerDown={(event) => handleZoneHandleDragStart(event, selectedZone, handle.handle)} />
-                ))}
-              </g>
-            ) : null}
-
             <River />
 
             {overlays.showLegend ? <Legend mapState={mapState} selected={selectedOverlay === "legend"} onPointerDown={handleOverlayDragStart} /> : null}
@@ -1138,163 +1222,234 @@ export default function App({ onHome }: { onHome: () => void }) {
             <CompassAndScale />
 
             {overlays.showTitleStamp ? <TitleStamp mapState={mapState} selected={selectedOverlay === "stamp"} onPointerDown={handleOverlayDragStart} /> : null}
+
+            {selectedBuilding ? <SelectionFrame x={selectedBuilding.x} y={selectedBuilding.y} width={selectedBuilding.width} height={selectedBuilding.height} rotation={selectedBuilding.rotation} /> : null}
+            {selectedGate ? <SelectionFrame x={selectedGate.x} y={selectedGate.y} width={selectedGate.width} height={selectedGate.height} rotation={selectedGate.rotation} /> : null}
+            {selectedZone && zoneEditMode !== "zone-resize" ? <SelectionFrame x={selectedZone.x} y={selectedZone.y} width={selectedZone.width} height={selectedZone.height} /> : null}
+
+            {selectedRoad ? (
+              <g>
+                {selectedRoad.points.map((point, index) => (
+                  <circle key={`${selectedRoad.id}-${index}`} cx={point.x} cy={point.y} r={9} fill="#0b1520" stroke="#7dd3fc" strokeWidth={3} style={{ cursor: "grab", touchAction: "none" }} onPointerDown={(event) => handleRoadPointDragStart(event, selectedRoad, index)} />
+                ))}
+              </g>
+            ) : null}
+
+            {selectedZone && zoneEditMode === "zone-resize" ? (
+              <g>
+                {getZoneHandles(selectedZone).map((handle) => (
+                  <rect key={handle.handle} x={handle.x - 8} y={handle.y - 8} width={16} height={16} rx={3} fill="#0b1520" stroke="#7dd3fc" strokeWidth={2.5} style={{ cursor: handle.cursor, touchAction: "none" }} onPointerDown={(event) => handleZoneHandleDragStart(event, selectedZone, handle.handle)} />
+                ))}
+              </g>
+            ) : null}
             </svg>
           </div>
         </div>
       </div>
 
       <aside className="editor-panel" onFocusCapture={() => { fieldEditArmedRef.current = true; }} onPointerDownCapture={() => { fieldEditArmedRef.current = true; }}>
-        <div className="panel-inner">
         <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={handleImportFile} />
 
-        <div className="panel-block">
-          <div className="panel-kicker">РЕЖИМ</div>
-          <h2>Редактор генплана</h2>
-          <p>Карта хранится локально в этом браузере и может экспортироваться в JSON и PNG.</p>
-          <p className="meta-line">Статус: {serverMessage}</p>
-          <div className="panel-status-grid">
-            <div className="mini-stat"><span>Выбор</span><strong>{selectedSummary}</strong></div>
-            <div className="mini-stat"><span>Hotkeys</span><strong>Ctrl/Cmd+S · Z · C/X/V · D · стрелки (Shift ×5) · Del</strong></div>
-          </div>
+        <div className="panel-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={inspectorOpen} className={inspectorOpen ? "is-active" : ""} onClick={() => setPanelSection(selected && selected.kind !== "overlay" ? selected.kind : "building")}>Свойства</button>
+          <button type="button" role="tab" aria-selected={activeSection === "service"} className={activeSection === "service" ? "is-active" : ""} onClick={() => setPanelSection("service")}>Карта</button>
+          <button type="button" role="tab" aria-selected={activeSection === "library"} className={activeSection === "library" ? "is-active" : ""} onClick={() => setPanelSection("library")}>Объекты</button>
         </div>
 
-        <div className="panel-block">
-          <div className="panel-kicker">СОХРАНЕНИЯ</div>
-          <label>
-            Версия
-            <select value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
-              <option value="">Выберите сохранение</option>
-              {savedVersions.map((version) => (
-                <option key={version.id} value={version.id}>{version.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="panel-tabs">
-          <button type="button" className={activeSection === "building" ? "active" : ""} onClick={() => setPanelSection("building")}>Здание</button>
-          <button type="button" className={activeSection === "road" ? "active" : ""} onClick={() => setPanelSection("road")}>Дорога</button>
-          <button type="button" className={activeSection === "zone" ? "active" : ""} onClick={() => setPanelSection("zone")}>Зона</button>
-          <button type="button" className={activeSection === "gate" ? "active" : ""} onClick={() => setPanelSection("gate")}>Ворота</button>
-          <button type="button" className={activeSection === "service" ? "active" : ""} onClick={() => setPanelSection("service")}>Сервис</button>
-          <button type="button" className={activeSection === "library" ? "active" : ""} onClick={() => setPanelSection("library")}>Быстрый выбор</button>
-        </div>
-
+        <div className="panel-inner">
         {selectedZone && activeSection === "zone" ? (
-          <div className="panel-block">
-            <div className="panel-kicker">ЗОНА</div>
-            <h3>{selectedZone.title}</h3>
-            <div className="segmented-row">
-              <button type="button" className={zoneEditMode === "none" ? "active" : ""} onClick={() => setZoneEditMode("none")}>Без drag</button>
-              <button type="button" className={zoneEditMode === "zone-only-move" ? "active" : ""} onClick={() => setZoneEditMode("zone-only-move")}>Двигать только зону</button>
-              <button type="button" className={zoneEditMode === "zone-with-buildings" ? "active" : ""} onClick={() => setZoneEditMode("zone-with-buildings")}>Зона + здания</button>
-              <button type="button" className={zoneEditMode === "zone-resize" ? "active" : ""} onClick={() => setZoneEditMode("zone-resize")}>Изменять размер</button>
+          <section className="inspector">
+            <div className="inspector-head">
+              <span className="inspector-kind" style={{ ["--kind-color" as string]: selectedZone.color }}>Зона</span>
+              <button type="button" className="icon-btn danger" title="Удалить зону вместе со зданиями" onClick={() => removeSelectedTarget({ kind: "zone", id: selectedZone.id })}><Trash2 size={16} /></button>
             </div>
-            <label>Название<input value={selectedZone.title} onChange={(event) => updateZone(selectedZone.id, "title", event.target.value)} /></label>
-            <label>Цвет<input value={selectedZone.color} onChange={(event) => updateZone(selectedZone.id, "color", event.target.value)} /></label>
-            <label>X<input type="number" value={selectedZone.x} onChange={(event) => updateZone(selectedZone.id, "x", Number(event.target.value))} /></label>
-            <label>Y<input type="number" value={selectedZone.y} onChange={(event) => updateZone(selectedZone.id, "y", Number(event.target.value))} /></label>
-            <label>Ширина<input type="number" value={selectedZone.width} onChange={(event) => updateZone(selectedZone.id, "width", Number(event.target.value))} /></label>
-            <label>Высота<input type="number" value={selectedZone.height} onChange={(event) => updateZone(selectedZone.id, "height", Number(event.target.value))} /></label>
-            <button type="button" className="danger" onClick={() => removeSelectedTarget({ kind: "zone", id: selectedZone.id })}>Удалить зону</button>
-          </div>
+            <label className="field"><span>Название</span><input data-label-field value={selectedZone.title} onChange={(event) => updateZone(selectedZone.id, "title", event.target.value)} /></label>
+            {colorField(selectedZone.color, (value) => updateZone(selectedZone.id, "color", value))}
+            <div className="field">
+              <span>На карте</span>
+              <div className="segmented segmented-wrap">
+                <button type="button" className={zoneEditMode === "none" ? "is-active" : ""} onClick={() => setZoneEditMode("none")}>Закреплена</button>
+                <button type="button" className={zoneEditMode === "zone-only-move" ? "is-active" : ""} onClick={() => setZoneEditMode("zone-only-move")}>Двигать</button>
+                <button type="button" className={zoneEditMode === "zone-with-buildings" ? "is-active" : ""} onClick={() => setZoneEditMode("zone-with-buildings")}>Со зданиями</button>
+                <button type="button" className={zoneEditMode === "zone-resize" ? "is-active" : ""} onClick={() => setZoneEditMode("zone-resize")}>Размер</button>
+              </div>
+            </div>
+            <div className="field-grid">
+              {numberField("X", selectedZone.x, (value) => updateZone(selectedZone.id, "x", value))}
+              {numberField("Y", selectedZone.y, (value) => updateZone(selectedZone.id, "y", value))}
+              {numberField("Ширина", selectedZone.width, (value) => updateZone(selectedZone.id, "width", value))}
+              {numberField("Высота", selectedZone.height, (value) => updateZone(selectedZone.id, "height", value))}
+            </div>
+            <p className="hint">{buildings.filter((entry) => entry.zoneId === selectedZone.id).length} объектов в зоне</p>
+          </section>
         ) : null}
 
         {selectedRoad && activeSection === "road" ? (
-          <div className="panel-block">
-            <div className="panel-kicker">ДОРОГА</div>
-            <h3>{selectedRoad.label || selectedRoad.id}</h3>
-            <label>Подпись<input value={selectedRoad.label ?? ""} onChange={(event) => updateRoad(selectedRoad.id, "label", event.target.value)} /></label>
-            <label>Ширина<input type="number" value={selectedRoad.width} onChange={(event) => updateRoad(selectedRoad.id, "width", Number(event.target.value))} /></label>
-            <label className="checkbox-row"><input type="checkbox" checked={Boolean(selectedRoad.major)} onChange={(event) => updateRoad(selectedRoad.id, "major", event.target.checked)} /> Главная магистраль</label>
-            <label>
-              Точки маршрута
-              <textarea rows={4} value={selectedRoad.points.map((point) => `${point.x},${point.y}`).join(" | ")} onChange={(event) => {
+          <section className="inspector">
+            <div className="inspector-head">
+              <span className="inspector-kind">{selectedRoad.major ? "Магистраль" : "Дорога"}</span>
+              <button type="button" className="icon-btn danger" title="Удалить дорогу" onClick={() => removeSelectedTarget({ kind: "road", id: selectedRoad.id })}><Trash2 size={16} /></button>
+            </div>
+            <label className="field"><span>Подпись</span><input data-label-field value={selectedRoad.label ?? ""} onChange={(event) => updateRoad(selectedRoad.id, "label", event.target.value)} /></label>
+            <div className="field">
+              <span>Тип</span>
+              <div className="segmented">
+                <button type="button" className={!selectedRoad.major ? "is-active" : ""} onClick={() => updateRoad(selectedRoad.id, "major", false)}>Улица</button>
+                <button type="button" className={selectedRoad.major ? "is-active" : ""} onClick={() => updateRoad(selectedRoad.id, "major", true)}>Магистраль</button>
+              </div>
+            </div>
+            <label className="field">
+              <span>Ширина · {selectedRoad.width}</span>
+              <input type="range" min={8} max={60} step={2} value={selectedRoad.width} onChange={(event) => updateRoad(selectedRoad.id, "width", Number(event.target.value))} />
+            </label>
+            <label className="field">
+              <span>Точки маршрута</span>
+              <textarea rows={3} value={selectedRoad.points.map((point) => `${point.x},${point.y}`).join(" | ")} onChange={(event) => {
                 const parsed = parsePoints(event.target.value);
                 if (parsed) updateRoad(selectedRoad.id, "points", parsed);
               }} />
             </label>
-            <small>Формат: `x,y | x,y | x,y`</small>
-          </div>
+            <p className="hint">Формат «x,y | x,y». Точки можно тянуть прямо на карте.</p>
+          </section>
         ) : null}
 
         {selectedBuilding && activeSection === "building" ? (
-          <div className="panel-block">
-            <div className="panel-kicker">ЗДАНИЕ</div>
-            <h3>{selectedBuilding.label}</h3>
-            <p className="meta-line">Район: {selectedZoneTitle}</p>
-            <label>Подпись<input value={selectedBuilding.label} onChange={(event) => updateBuilding(selectedBuilding.id, "label", event.target.value)} /></label>
-            <label>Цвет<input value={selectedBuilding.color} onChange={(event) => updateBuilding(selectedBuilding.id, "color", event.target.value)} /></label>
-            <label>
-              Форма
-              <select value={selectedBuilding.form} onChange={(event) => setBuildingForm(selectedBuilding.id, event.target.value as BuildingForm)}>
-                <option value="rect">Прямоугольник</option><option value="l">L-образное</option><option value="u">U-образное</option><option value="oct">Восьмиугольник</option><option value="t">T-образное</option><option value="courtyard">Внутренний двор</option><option value="trapezoid">Трапециевидное</option><option value="rotunda">Ротонда</option><option value="corner-block">Угловой квартал</option><option value="segmented-bar">Длинный корпус</option><option value="depot">Вокзал / депо</option><option value="sawtooth">Цех с зубчатым контуром</option><option value="park">Парк</option><option value="tree-cluster">Группа деревьев</option><option value="buffer-strip">Зелёная полоса</option>
-              </select>
+          <section className="inspector">
+            <div className="inspector-head">
+              <span className="inspector-kind" style={{ ["--kind-color" as string]: selectedBuilding.color }}>{formLabel(selectedBuilding.form)}</span>
+              <span className="inspector-zone">{selectedZoneTitle}</span>
+              <button type="button" className="icon-btn" title="Дублировать · Ctrl+D" onClick={duplicateSelected}><CopyPlus size={16} /></button>
+              <button type="button" className="icon-btn danger" title="Удалить · Del" onClick={() => removeSelectedTarget({ kind: "building", id: selectedBuilding.id })}><Trash2 size={16} /></button>
+            </div>
+            <label className="field"><span>Подпись</span><input data-label-field value={selectedBuilding.label} onChange={(event) => updateBuilding(selectedBuilding.id, "label", event.target.value)} /></label>
+            <div className="field">
+              <span>Форма</span>
+              <div className="form-picker">
+                {formGroups.map(({ group, forms }) => (
+                  <div key={group} className="form-grid form-grid-compact" role="radiogroup" aria-label={group}>
+                    {forms.map((entry) => (
+                      <button
+                        key={entry.form}
+                        type="button"
+                        role="radio"
+                        aria-checked={selectedBuilding.form === entry.form}
+                        title={entry.label}
+                        className={`form-tile${selectedBuilding.form === entry.form ? " is-active" : ""}`}
+                        onClick={() => setBuildingForm(selectedBuilding.id, entry.form)}
+                      >
+                        <FormThumb form={entry.form} color={selectedBuilding.color} />
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {colorField(selectedBuilding.color, (value) => updateBuilding(selectedBuilding.id, "color", value))}
+            <div className="field-grid">
+              {numberField("X", selectedBuilding.x, (value) => updateBuilding(selectedBuilding.id, "x", value))}
+              {numberField("Y", selectedBuilding.y, (value) => updateBuilding(selectedBuilding.id, "y", value))}
+              {numberField("Ширина", selectedBuilding.width, (value) => updateBuilding(selectedBuilding.id, "width", value))}
+              {numberField("Высота", selectedBuilding.height, (value) => updateBuilding(selectedBuilding.id, "height", value))}
+            </div>
+            <label className="field">
+              <span>Поворот · {normalizeAngle(selectedBuilding.rotation)}°</span>
+              <input type="range" min={0} max={360} step={5} value={normalizeAngle(selectedBuilding.rotation)} onChange={(event) => updateBuilding(selectedBuilding.id, "rotation", Number(event.target.value))} />
             </label>
-            <label>X<input type="number" value={selectedBuilding.x} onChange={(event) => updateBuilding(selectedBuilding.id, "x", Number(event.target.value))} /></label>
-            <label>Y<input type="number" value={selectedBuilding.y} onChange={(event) => updateBuilding(selectedBuilding.id, "y", Number(event.target.value))} /></label>
-            <label>Ширина<input type="number" value={selectedBuilding.width} onChange={(event) => updateBuilding(selectedBuilding.id, "width", Number(event.target.value))} /></label>
-            <label>Высота<input type="number" value={selectedBuilding.height} onChange={(event) => updateBuilding(selectedBuilding.id, "height", Number(event.target.value))} /></label>
-            <label>Поворот (0-360)<input type="number" min={0} max={360} value={selectedBuilding.rotation ?? 0} onChange={(event) => updateBuilding(selectedBuilding.id, "rotation", Number(event.target.value))} /></label>
-            <div className="angle-presets">{[0, 45, 90, 180].map((angle) => (<button key={angle} type="button" onClick={() => updateBuilding(selectedBuilding.id, "rotation", angle)}>{angle}°</button>))}</div>
-            {(selectedBuilding.form === "l" || selectedBuilding.form === "corner-block") ? (<><label>Вырез X<input type="number" value={selectedBuilding.cutWidth ?? 50} onChange={(event) => updateBuilding(selectedBuilding.id, "cutWidth", Number(event.target.value))} /></label><label>Вырез Y<input type="number" value={selectedBuilding.cutHeight ?? 40} onChange={(event) => updateBuilding(selectedBuilding.id, "cutHeight", Number(event.target.value))} /></label></>) : null}
-            {selectedBuilding.form === "u" ? (<><label>Ширина проёма<input type="number" value={selectedBuilding.gapWidth ?? 50} onChange={(event) => updateBuilding(selectedBuilding.id, "gapWidth", Number(event.target.value))} /></label><label>Глубина проёма<input type="number" value={selectedBuilding.gapDepth ?? 40} onChange={(event) => updateBuilding(selectedBuilding.id, "gapDepth", Number(event.target.value))} /></label></>) : null}
-            {selectedBuilding.form === "oct" ? <label>Радиус<input type="number" value={selectedBuilding.radius ?? 30} onChange={(event) => updateBuilding(selectedBuilding.id, "radius", Number(event.target.value))} /></label> : null}
-            {selectedBuilding.form === "t" ? (<><label>Ширина стойки<input type="number" value={selectedBuilding.neckWidth ?? 50} onChange={(event) => updateBuilding(selectedBuilding.id, "neckWidth", Number(event.target.value))} /></label><label>Глубина перекладины<input type="number" value={selectedBuilding.wingDepth ?? 40} onChange={(event) => updateBuilding(selectedBuilding.id, "wingDepth", Number(event.target.value))} /></label></>) : null}
-            {selectedBuilding.form === "courtyard" ? <label>Отступ двора<input type="number" value={selectedBuilding.innerInset ?? 20} onChange={(event) => updateBuilding(selectedBuilding.id, "innerInset", Number(event.target.value))} /></label> : null}
-            {selectedBuilding.form === "trapezoid" ? <label>Верхняя ширина<input type="number" value={selectedBuilding.topWidth ?? Math.round(selectedBuilding.width * 0.72)} onChange={(event) => updateBuilding(selectedBuilding.id, "topWidth", Number(event.target.value))} /></label> : null}
-            {selectedBuilding.form === "segmented-bar" ? <label>Количество секций<input type="number" min={2} value={selectedBuilding.segmentCount ?? 4} onChange={(event) => updateBuilding(selectedBuilding.id, "segmentCount", Number(event.target.value))} /></label> : null}
-            {(selectedBuilding.form === "depot" || selectedBuilding.form === "sawtooth") ? <label>Количество пролётов<input type="number" min={2} value={selectedBuilding.bayCount ?? 4} onChange={(event) => updateBuilding(selectedBuilding.id, "bayCount", Number(event.target.value))} /></label> : null}
-            <p className="meta-line">Здания привязываются к сетке 10px и не могут пересекать дороги, если не включён режим игнорирования.</p>
-          </div>
+            <div className="chips">{[0, 15, 45, 90, 180].map((angle) => (<button key={angle} type="button" className={normalizeAngle(selectedBuilding.rotation) === angle ? "is-active" : ""} onClick={() => updateBuilding(selectedBuilding.id, "rotation", angle)}>{angle}°</button>))}</div>
+            <div className="field-grid">
+              {(selectedBuilding.form === "l" || selectedBuilding.form === "corner-block") ? (<>{numberField("Вырез X", selectedBuilding.cutWidth ?? 50, (value) => updateBuilding(selectedBuilding.id, "cutWidth", value))}{numberField("Вырез Y", selectedBuilding.cutHeight ?? 40, (value) => updateBuilding(selectedBuilding.id, "cutHeight", value))}</>) : null}
+              {selectedBuilding.form === "u" ? (<>{numberField("Ширина проёма", selectedBuilding.gapWidth ?? 50, (value) => updateBuilding(selectedBuilding.id, "gapWidth", value))}{numberField("Глубина проёма", selectedBuilding.gapDepth ?? 40, (value) => updateBuilding(selectedBuilding.id, "gapDepth", value))}</>) : null}
+              {selectedBuilding.form === "oct" ? numberField("Радиус", selectedBuilding.radius ?? 30, (value) => updateBuilding(selectedBuilding.id, "radius", value)) : null}
+              {selectedBuilding.form === "t" ? (<>{numberField("Ширина стойки", selectedBuilding.neckWidth ?? 50, (value) => updateBuilding(selectedBuilding.id, "neckWidth", value))}{numberField("Глубина перекладины", selectedBuilding.wingDepth ?? 40, (value) => updateBuilding(selectedBuilding.id, "wingDepth", value))}</>) : null}
+              {selectedBuilding.form === "courtyard" ? numberField("Отступ двора", selectedBuilding.innerInset ?? 20, (value) => updateBuilding(selectedBuilding.id, "innerInset", value)) : null}
+              {selectedBuilding.form === "trapezoid" ? numberField("Верхняя ширина", selectedBuilding.topWidth ?? Math.round(selectedBuilding.width * 0.72), (value) => updateBuilding(selectedBuilding.id, "topWidth", value)) : null}
+              {(selectedBuilding.form === "segmented-bar" || selectedBuilding.form === "terrace") ? numberField("Секций", selectedBuilding.segmentCount ?? (selectedBuilding.form === "terrace" ? 5 : 4), (value) => updateBuilding(selectedBuilding.id, "segmentCount", value), { min: 2 }) : null}
+              {(selectedBuilding.form === "depot" || selectedBuilding.form === "sawtooth") ? numberField("Пролётов", selectedBuilding.bayCount ?? 4, (value) => updateBuilding(selectedBuilding.id, "bayCount", value), { min: 2 }) : null}
+            </div>
+            <p className="hint">Сетка 10 px. Стрелки двигают объект, Shift — на 50 px.</p>
+          </section>
         ) : null}
 
         {selectedGate && activeSection === "gate" ? (
-          <div className="panel-block">
-            <div className="panel-kicker">ВОРОТА</div>
-            <h3>{selectedGate.label}</h3>
-            <label>Подпись<input value={selectedGate.label} onChange={(event) => updateGate(selectedGate.id, "label", event.target.value)} /></label>
-            <label>X<input type="number" value={selectedGate.x} onChange={(event) => updateGate(selectedGate.id, "x", Number(event.target.value))} /></label>
-            <label>Y<input type="number" value={selectedGate.y} onChange={(event) => updateGate(selectedGate.id, "y", Number(event.target.value))} /></label>
-            <label>Ширина<input type="number" value={selectedGate.width} onChange={(event) => updateGate(selectedGate.id, "width", Number(event.target.value))} /></label>
-            <label>Высота<input type="number" value={selectedGate.height} onChange={(event) => updateGate(selectedGate.id, "height", Number(event.target.value))} /></label>
-            <label>Поворот<input type="number" min={0} max={360} value={selectedGate.rotation ?? 0} onChange={(event) => updateGate(selectedGate.id, "rotation", Number(event.target.value))} /></label>
-            <button type="button" className="danger" onClick={() => removeSelectedTarget({ kind: "gate", id: selectedGate.id })}>Удалить ворота</button>
+          <section className="inspector">
+            <div className="inspector-head">
+              <span className="inspector-kind">Ворота</span>
+              <button type="button" className="icon-btn danger" title="Удалить ворота" onClick={() => removeSelectedTarget({ kind: "gate", id: selectedGate.id })}><Trash2 size={16} /></button>
+            </div>
+            <label className="field"><span>Подпись</span><input data-label-field value={selectedGate.label} onChange={(event) => updateGate(selectedGate.id, "label", event.target.value)} /></label>
+            <div className="field-grid">
+              {numberField("X", selectedGate.x, (value) => updateGate(selectedGate.id, "x", value))}
+              {numberField("Y", selectedGate.y, (value) => updateGate(selectedGate.id, "y", value))}
+              {numberField("Ширина", selectedGate.width, (value) => updateGate(selectedGate.id, "width", value))}
+              {numberField("Высота", selectedGate.height, (value) => updateGate(selectedGate.id, "height", value))}
+            </div>
+            <label className="field">
+              <span>Поворот · {normalizeAngle(selectedGate.rotation)}°</span>
+              <input type="range" min={0} max={360} step={5} value={normalizeAngle(selectedGate.rotation)} onChange={(event) => updateGate(selectedGate.id, "rotation", Number(event.target.value))} />
+            </label>
+          </section>
+        ) : null}
+
+        {inspectorOpen && !objectSelected ? (
+          <div className="panel-empty">
+            <p>Выберите объект на карте или добавьте новый из каталога.</p>
+            <button type="button" className="btn btn-accent" onClick={() => setAddMenuOpen(true)}><Plus size={16} />Открыть каталог</button>
           </div>
         ) : null}
 
         {activeSection === "service" ? (
-          <div className="panel-block">
-            <div className="panel-kicker">СЕРВИС</div>
-            <label>Название карты<input value={mapState.title} onChange={(event) => { rememberFieldEdit(); setMapState((current) => ({ ...current, title: event.target.value })); }} /></label>
-            <label className="checkbox-row"><input type="checkbox" checked={overlays.showLegend} onChange={(event) => { rememberFieldEdit(); setMapState((current) => ({ ...current, overlays: { ...current.overlays, showLegend: event.target.checked } })); }} /> Показать легенду</label>
-            <label className="checkbox-row"><input type="checkbox" checked={overlays.showTitleStamp} onChange={(event) => { rememberFieldEdit(); setMapState((current) => ({ ...current, overlays: { ...current.overlays, showTitleStamp: event.target.checked } })); }} /> Показать штамп</label>
-            <label>Legend X<input type="number" value={overlays.legendPosition.x} onChange={(event) => updateOverlayPosition("legend", { ...overlays.legendPosition, x: Number(event.target.value) })} /></label>
-            <label>Legend Y<input type="number" value={overlays.legendPosition.y} onChange={(event) => updateOverlayPosition("legend", { ...overlays.legendPosition, y: Number(event.target.value) })} /></label>
-            <label>Stamp X<input type="number" value={overlays.stampPosition.x} onChange={(event) => updateOverlayPosition("stamp", { ...overlays.stampPosition, x: Number(event.target.value) })} /></label>
-            <label>Stamp Y<input type="number" value={overlays.stampPosition.y} onChange={(event) => updateOverlayPosition("stamp", { ...overlays.stampPosition, y: Number(event.target.value) })} /></label>
-            {selectedOverlay ? <p className="meta-line">Выбран overlay: {selectedOverlay}</p> : null}
-          </div>
+          <section className="inspector">
+            <label className="field"><span>Название карты</span><input value={mapState.title} onChange={(event) => { rememberFieldEdit(); setMapState((current) => ({ ...current, title: event.target.value })); }} /></label>
+            <div className="field">
+              <span>Сохранённые версии</span>
+              <select value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
+                <option value="">{savedVersions.length ? "Выберите версию" : "Пока нет сохранений"}</option>
+                {savedVersions.map((version) => (
+                  <option key={version.id} value={version.id}>{version.label}</option>
+                ))}
+              </select>
+              <div className="row-actions">
+                <button type="button" className="btn" onClick={savePlan}><Save size={16} />Сохранить версию</button>
+                <button type="button" className="btn" onClick={loadSelectedVersion} disabled={!selectedVersionId}><History size={16} />Открыть</button>
+              </div>
+            </div>
+            <label className="check"><input type="checkbox" checked={overlays.showLegend} onChange={(event) => { rememberFieldEdit(); setMapState((current) => ({ ...current, overlays: { ...current.overlays, showLegend: event.target.checked } })); }} />Легенда районов</label>
+            <label className="check"><input type="checkbox" checked={overlays.showTitleStamp} onChange={(event) => { rememberFieldEdit(); setMapState((current) => ({ ...current, overlays: { ...current.overlays, showTitleStamp: event.target.checked } })); }} />Штамп чертежа</label>
+            <div className="field-grid">
+              {numberField("Легенда X", overlays.legendPosition.x, (value) => updateOverlayPosition("legend", { ...overlays.legendPosition, x: value }))}
+              {numberField("Легенда Y", overlays.legendPosition.y, (value) => updateOverlayPosition("legend", { ...overlays.legendPosition, y: value }))}
+              {numberField("Штамп X", overlays.stampPosition.x, (value) => updateOverlayPosition("stamp", { ...overlays.stampPosition, x: value }))}
+              {numberField("Штамп Y", overlays.stampPosition.y, (value) => updateOverlayPosition("stamp", { ...overlays.stampPosition, y: value }))}
+            </div>
+            <div className="field">
+              <span>Клавиши</span>
+              <dl className="hotkeys">
+                <dt><kbd>Ctrl</kbd><kbd>S</kbd></dt><dd>Сохранить версию</dd>
+                <dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt><dd>Отменить</dd>
+                <dt><kbd>Ctrl</kbd><kbd>C</kbd> <kbd>X</kbd> <kbd>V</kbd></dt><dd>Копировать, вырезать, вставить</dd>
+                <dt><kbd>Ctrl</kbd><kbd>D</kbd></dt><dd>Дублировать</dd>
+                <dt><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd></dt><dd>Сдвиг на 10 px, с Shift — на 50</dd>
+                <dt><kbd>Del</kbd></dt><dd>Удалить</dd>
+              </dl>
+            </div>
+          </section>
         ) : null}
 
-        <div className="panel-block compact-list" hidden={activeSection !== "library"}>
-          <div className="panel-kicker">БЫСТРЫЙ ВЫБОР</div>
-          <h3>Сущности</h3>
-          <label>Поиск<input type="search" value={libraryQuery} placeholder="Название объекта" onChange={(event) => setLibraryQuery(event.target.value)} /></label>
+        <section className="inspector library" hidden={activeSection !== "library"}>
+          <label className="field search-field">
+            <Search size={16} />
+            <input type="search" value={libraryQuery} placeholder="Поиск по названию" aria-label="Поиск по названию" onChange={(event) => setLibraryQuery(event.target.value)} />
+          </label>
           {libraryGroups.map((group) => (
             <div key={group.title} className="library-group">
-              <div className="library-group-title">{group.title} · {group.items.length}</div>
+              <div className="library-group-title">{group.title}<span>{group.items.length}</span></div>
               {group.items.map((item) => (
-                <button key={item.target.id} type="button" className={selected?.kind === item.target.kind && selected.id === item.target.id ? "active" : ""} onClick={() => { setSelected(item.target); setPanelSection(item.target.kind as PanelSection); }}>{item.label}</button>
+                <button key={item.target.id} type="button" className={selected?.kind === item.target.kind && selected.id === item.target.id ? "is-active" : ""} onClick={() => { setSelected(item.target); setPanelSection(item.target.kind as PanelSection); }}>{item.label}</button>
               ))}
             </div>
           ))}
-          {!libraryGroups.length ? <p className="meta-line">Ничего не найдено.</p> : null}
-        </div>
-        {activeSection === "building" && !selectedBuilding ? <div className="panel-empty">Выбери здание на карте или создай новое через верхнюю панель.</div> : null}
-        {activeSection === "road" && !selectedRoad ? <div className="panel-empty">Выбери дорогу, чтобы менять ширину, магистральность и маршрут.</div> : null}
-        {activeSection === "zone" && !selectedZone ? <div className="panel-empty">Выбери зону для движения, resize или смены цвета и названия.</div> : null}
-        {activeSection === "gate" && !selectedGate ? <div className="panel-empty">Выбери ворота или добавь новые, чтобы редактировать подпись и поворот.</div> : null}
+          {!libraryGroups.length ? <p className="hint">Ничего не найдено</p> : null}
+        </section>
         </div>
       </aside>
     </div>
