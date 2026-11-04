@@ -37,7 +37,18 @@ export type BuildingForm =
   | "buffer-strip"
   | "park"
   | "harbor"
-  | "piers";
+  | "piers"
+  | "h"
+  | "cross"
+  | "hex"
+  | "tower"
+  | "stadium"
+  | "terrace"
+  | "parking"
+  | "pond"
+  | "square"
+  | "forest"
+  | "garden";
 
 export type BuildingData = {
   id: string;
@@ -250,7 +261,7 @@ export const initialBuildings: BuildingData[] = [
   { id: "building-1776193914695", zoneId: "port", label: "ДЕРЕВЬЯ", color: "#6ee7b7", form: "tree-cluster", x: 1650, y: 150, width: 28, height: 150 },
   { id: "building-1776193914871", zoneId: "port", label: "ДЕРЕВЬЯ", color: "#6ee7b7", form: "tree-cluster", x: 1390, y: 580, width: 28, height: 150 },
   { id: "building-1776193915047", zoneId: "port", label: "ДЕРЕВЬЯ", color: "#6ee7b7", form: "tree-cluster", x: 1400, y: 470, width: 28, height: 150 },
-  { id: "park-1776260136124", zoneId: "admin", label: "ПАРК", color: "#22c55e", form: "buffer-strip", x: 380, y: 1270, width: 120, height: 80, rotation: 0 },
+  { id: "park-1776260136124", zoneId: "admin", label: "СКВЕР", color: "#22c55e", form: "square", x: 380, y: 1250, width: 120, height: 100, rotation: 0 },
 ];
 
 export const initialGates: GateData[] = [

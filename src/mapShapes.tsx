@@ -1,12 +1,13 @@
-import { Fragment } from "react";
-import type { BuildingData, GateData, MapState, OverlayId, RoadData, ZoneData } from "./cityData";
+import { BuildingShape } from "./buildings";
+import type { GateData, MapState, OverlayId, RoadData, ZoneData } from "./cityData";
+import { useMemo } from "react";
+import { findJunctions, type Junction } from "./mapState";
+import { ACCENT, labelHalo, noop, textStyle } from "./mapStyle";
 
-export const textStyle = {
-  fontFamily: "IBM Plex Mono, Fira Code, Consolas, monospace",
-  letterSpacing: 1.2,
-};
+export { BuildingShape, FormThumb, buildingForms, formLabel, formSize } from "./buildings";
+export { textStyle } from "./mapStyle";
 
-const zoneFill = (color: string) => `${color}22`;
+const zoneFill = (color: string) => `${color}1a`;
 
 export function ZoneBlock({
   zone,
@@ -34,7 +35,7 @@ export function ZoneBlock({
         strokeWidth={selected ? 4 : 3}
         strokeDasharray="14 8"
       />
-      <text x={zone.x + 18} y={zone.y + 28} fill={zone.color} fontSize={20} fontWeight={700} style={textStyle}>
+      <text x={zone.x + 18} y={zone.y + 28} fill={zone.color} fontSize={20} fontWeight={600} style={textStyle} {...labelHalo}>
         {zone.title}
       </text>
     </g>
@@ -57,12 +58,13 @@ export function Road({
   return (
     <g onClick={onSelect} onPointerDown={(event) => onDragStart(event, road)} style={{ cursor: "grab", touchAction: "none" }}>
       <path d={d} fill="none" stroke="#1f2937" strokeWidth={road.width + 10} strokeLinecap="round" strokeLinejoin="round" />
+      <path d={d} fill="none" stroke="#64748b" strokeWidth={road.width + 3} strokeLinecap="round" strokeLinejoin="round" opacity={0.55} />
       <path d={d} fill="none" stroke={selected ? "#94a3b8" : "#4a5568"} strokeWidth={road.width} strokeLinecap="round" strokeLinejoin="round" />
       {road.major ? (
         <path d={d} fill="none" stroke="#cbd5e1" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="22 18" />
       ) : null}
       {road.label ? (
-        <text x={midPoint.x + 14} y={midPoint.y - 12} fill="#93a4b8" fontSize={12} style={textStyle}>
+        <text x={midPoint.x + 14} y={midPoint.y - 12} fill="#a3b3c6" fontSize={12} style={textStyle} {...labelHalo}>
           {road.label}
         </text>
       ) : null}
@@ -96,385 +98,8 @@ export function Gate({
           strokeWidth={2}
         />
       </g>
-      <text x={gate.x + (gate.textDx ?? gate.width + 18)} y={gate.y + (gate.textDy ?? gate.height * 0.72)} fill="#e5e7eb" fontSize={12} style={textStyle}>
+      <text x={gate.x + (gate.textDx ?? gate.width + 18)} y={gate.y + (gate.textDy ?? gate.height * 0.72)} fill="#e5e7eb" fontSize={12} style={textStyle} {...labelHalo}>
         {gate.label}
-      </text>
-    </g>
-  );
-}
-
-export function BuildingShape({
-  building,
-  hovered,
-  selected,
-  onEnter,
-  onLeave,
-  onSelect,
-  onDragStart,
-}: {
-  building: BuildingData;
-  hovered: boolean;
-  selected: boolean;
-  onEnter: (id: string) => void;
-  onLeave: () => void;
-  onSelect: () => void;
-  onDragStart: (event: React.PointerEvent<SVGGElement>, building: BuildingData) => void;
-}) {
-  const stroke = selected ? "#f8fafc" : building.color;
-  const fill = hovered || selected ? `${building.color}55` : `${building.color}2f`;
-  const textX = building.textX ?? building.x + building.width / 2;
-  const textY = building.textY ?? building.y + building.height / 2;
-  const centerX = building.x + building.width / 2;
-  const centerY = building.y + building.height / 2;
-  const rotation = building.rotation ?? 0;
-  const groupTransform = rotation ? `rotate(${rotation} ${centerX} ${centerY})` : undefined;
-
-  const commonProps = {
-    onMouseEnter: () => onEnter(building.id),
-    onMouseLeave: onLeave,
-    onClick: onSelect,
-    onPointerDown: (event: React.PointerEvent<SVGGElement>) => onDragStart(event, building),
-    style: { cursor: "grab", touchAction: "none" },
-  };
-
-  if (building.form === "rect") {
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        {building.doubleFrame ? (
-          <rect x={building.x - 8} y={building.y - 8} width={building.width + 16} height={building.height + 16} fill="none" stroke={building.color} strokeWidth={2} />
-        ) : null}
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "l") {
-    const path = [
-      `M ${building.x} ${building.y}`,
-      `L ${building.x + building.width} ${building.y}`,
-      `L ${building.x + building.width} ${building.y + (building.cutHeight ?? 40)}`,
-      `L ${building.x + (building.cutWidth ?? 50)} ${building.y + (building.cutHeight ?? 40)}`,
-      `L ${building.x + (building.cutWidth ?? 50)} ${building.y + building.height}`,
-      `L ${building.x} ${building.y + building.height}`,
-      "Z",
-    ].join(" ");
-
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <path d={path} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "u") {
-    const gapWidth = building.gapWidth ?? Math.round(building.width * 0.35);
-    const gapDepth = building.gapDepth ?? Math.round(building.height * 0.45);
-    const sideWidth = (building.width - gapWidth) / 2;
-    const path = [
-      `M ${building.x} ${building.y + building.height}`,
-      `L ${building.x} ${building.y}`,
-      `L ${building.x + building.width} ${building.y}`,
-      `L ${building.x + building.width} ${building.y + building.height}`,
-      `L ${building.x + building.width - sideWidth} ${building.y + building.height}`,
-      `L ${building.x + building.width - sideWidth} ${building.y + gapDepth}`,
-      `L ${building.x + sideWidth} ${building.y + gapDepth}`,
-      `L ${building.x + sideWidth} ${building.y + building.height}`,
-      "Z",
-    ].join(" ");
-
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <path d={path} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <text x={textX} y={textY + 10} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "t") {
-    const neckWidth = building.neckWidth ?? Math.round(building.width * 0.36);
-    const wingDepth = building.wingDepth ?? Math.round(building.height * 0.42);
-    const neckX = building.x + (building.width - neckWidth) / 2;
-    const path = [
-      `M ${building.x} ${building.y}`,
-      `L ${building.x + building.width} ${building.y}`,
-      `L ${building.x + building.width} ${building.y + wingDepth}`,
-      `L ${neckX + neckWidth} ${building.y + wingDepth}`,
-      `L ${neckX + neckWidth} ${building.y + building.height}`,
-      `L ${neckX} ${building.y + building.height}`,
-      `L ${neckX} ${building.y + wingDepth}`,
-      `L ${building.x} ${building.y + wingDepth}`,
-      "Z",
-    ].join(" ");
-
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <path d={path} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "courtyard") {
-    const inset = building.innerInset ?? Math.round(Math.min(building.width, building.height) * 0.22);
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <rect x={building.x + inset} y={building.y + inset} width={Math.max(16, building.width - inset * 2)} height={Math.max(16, building.height - inset * 2)} fill="#0f1a25" stroke={stroke} strokeWidth={1.5} strokeDasharray="5 4" />
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "trapezoid") {
-    const topWidth = building.topWidth ?? Math.round(building.width * 0.72);
-    const offset = (building.width - topWidth) / 2;
-    const points = [
-      `${building.x + offset},${building.y}`,
-      `${building.x + offset + topWidth},${building.y}`,
-      `${building.x + building.width},${building.y + building.height}`,
-      `${building.x},${building.y + building.height}`,
-    ].join(" ");
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <polygon points={points} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "rotunda") {
-    const rx = building.width / 2;
-    const ry = building.height / 2;
-    const cx = building.x + rx;
-    const cy = building.y + ry;
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <ellipse cx={cx} cy={cy} rx={Math.max(12, rx * 0.45)} ry={Math.max(10, ry * 0.45)} fill="none" stroke={stroke} strokeWidth={1.5} strokeDasharray="5 4" />
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "corner-block") {
-    const cutWidth = building.cutWidth ?? Math.round(building.width * 0.55);
-    const cutHeight = building.cutHeight ?? Math.round(building.height * 0.45);
-    const path = [
-      `M ${building.x} ${building.y}`,
-      `L ${building.x + building.width} ${building.y}`,
-      `L ${building.x + building.width} ${building.y + cutHeight}`,
-      `L ${building.x + cutWidth} ${building.y + cutHeight}`,
-      `L ${building.x + cutWidth} ${building.y + building.height}`,
-      `L ${building.x} ${building.y + building.height}`,
-      "Z",
-    ].join(" ");
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <path d={path} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "segmented-bar") {
-    const segmentCount = Math.max(2, building.segmentCount ?? 4);
-    const segmentWidth = building.width / segmentCount;
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        {Array.from({ length: segmentCount - 1 }, (_, index) => (
-          <line key={index} x1={building.x + segmentWidth * (index + 1)} y1={building.y + 3} x2={building.x + segmentWidth * (index + 1)} y2={building.y + building.height - 3} stroke={stroke} strokeWidth={1.5} opacity={0.8} />
-        ))}
-        <text x={textX} y={textY} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "depot") {
-    const bayCount = Math.max(2, building.bayCount ?? 4);
-    const bayWidth = building.width / bayCount;
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        {Array.from({ length: bayCount }, (_, index) => (
-          <rect key={index} x={building.x + bayWidth * index + 3} y={building.y + building.height * 0.45} width={Math.max(8, bayWidth - 6)} height={building.height * 0.45 - 3} fill="none" stroke={stroke} strokeWidth={1.4} />
-        ))}
-        <text x={textX} y={building.y + building.height * 0.28} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "sawtooth") {
-    const bayCount = Math.max(3, building.bayCount ?? 4);
-    const bayWidth = building.width / bayCount;
-    const roofY = building.y + building.height * 0.35;
-    const points = [
-      `${building.x},${building.y + building.height}`,
-      `${building.x},${roofY}`,
-      ...Array.from({ length: bayCount }, (_, index) => {
-        const left = building.x + bayWidth * index;
-        const peak = left + bayWidth * 0.45;
-        const right = left + bayWidth;
-        return `${peak},${building.y} ${right},${roofY}`;
-      }).join(" ").split(" "),
-      `${building.x + building.width},${building.y + building.height}`,
-    ].join(" ");
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <polygon points={points} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <text x={textX} y={building.y + building.height * 0.68} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "cemetery") {
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} fill="#20161a" stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <line x1={building.x + 14} y1={building.y + 14} x2={building.x + building.width - 12} y2={building.y + building.height - 10} stroke="#cbd5e1" strokeWidth={2} opacity={0.6} />
-        <line x1={building.x + building.width - 12} y1={building.y + 14} x2={building.x + 14} y2={building.y + building.height - 10} stroke="#cbd5e1" strokeWidth={2} opacity={0.6} />
-        <line x1={building.x + building.width / 2} y1={building.y + 14} x2={building.x + building.width / 2} y2={building.y + building.height - 10} stroke="#cbd5e1" strokeWidth={2} opacity={0.6} />
-        <line x1={building.x + 8} y1={building.y + building.height / 2} x2={building.x + building.width - 6} y2={building.y + building.height / 2} stroke="#cbd5e1" strokeWidth={2} opacity={0.6} />
-        <text x={textX} y={building.y + building.height + 16} fill="#fecaca" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "plaza") {
-    const cx = building.x + building.width / 2;
-    const cy = building.y + building.height / 2;
-    const radius = Math.min(building.width, building.height) / 2;
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <circle cx={cx} cy={cy} r={radius} fill="#083141" stroke={stroke} strokeWidth={selected ? 3 : 2} strokeDasharray="10 8" />
-        <circle cx={cx} cy={cy} r={34} fill="#0c4a5d" stroke="#a5f3fc" strokeWidth={3} />
-        <circle cx={cx} cy={cy} r={12} fill="#d8fafe" />
-        <text x={cx} y={building.y + building.height + 18} fill="#91efff" fontSize={12} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "buffer-strip") {
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} fill={building.color} stroke={selected ? "#f8fafc" : "#365314"} strokeWidth={selected ? 3 : 1.5} opacity={0.92} />
-      </g>
-    );
-  }
-
-  if (building.form === "park") {
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} rx={10} fill="#153728" stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <circle cx={building.x + 24} cy={building.y + 24} r={10} fill="#214d3a" stroke="#86efac" strokeWidth={1.2} />
-        <circle cx={building.x + building.width - 28} cy={building.y + 22} r={9} fill="#214d3a" stroke="#86efac" strokeWidth={1.2} />
-        <circle cx={building.x + building.width / 2} cy={building.y + building.height - 18} r={11} fill="#214d3a" stroke="#86efac" strokeWidth={1.2} />
-        <text x={textX} y={textY} fill="#dcfce7" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "tree-cluster") {
-    const cols = Math.max(1, Math.floor(building.width / 28));
-    const rows = Math.max(1, Math.floor(building.height / 28));
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        {Array.from({ length: rows }).map((_, row) =>
-          Array.from({ length: cols }).map((__, col) => {
-            const cx = building.x + 12 + col * 24;
-            const cy = building.y + 12 + row * 24;
-            return (
-              <Fragment key={`${row}-${col}`}>
-                <circle cx={cx} cy={cy} r={8} fill="#173a2e" stroke="#6ee7b7" strokeWidth={1.2} />
-                <circle cx={cx + 6} cy={cy + 3} r={6} fill="#214d3a" stroke="#86efac" strokeWidth={1} />
-              </Fragment>
-            );
-          }),
-        )}
-        <text x={textX} y={building.y + building.height + 14} fill="#bbf7d0" fontSize={10} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "harbor") {
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={building.width} height={building.height} fill="#173728" stroke={stroke} strokeWidth={selected ? 3 : 2} rx={8} />
-        <rect x={building.x + 14} y={building.y + 14} width={building.width - 28} height={40} fill="#0f1f18" stroke="#86efac" strokeWidth={1.4} />
-        <text x={textX} y={building.y + 34} fill="#dcfce7" fontSize={16} textAnchor="middle" dominantBaseline="middle" style={textStyle}>ПОРТ</text>
-        <text x={textX} y={building.y + building.height - 20} fill="#8df4d0" fontSize={12} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  if (building.form === "piers") {
-    return (
-      <g {...commonProps} transform={groupTransform}>
-        <rect x={building.x} y={building.y} width={22} height={building.height} fill="#334155" stroke={selected ? "#f8fafc" : "#cbd5e1"} strokeWidth={selected ? 2.6 : 1.6} />
-        {Array.from({ length: 4 }, (_, index) => {
-          const pierY = building.y + 12 + index * 38;
-          return (
-            <g key={index}>
-              <rect x={building.x + 22} y={pierY} width={building.width - 22} height={12} fill="#4b5563" stroke="#d5dde7" strokeWidth={1.2} rx={1.5} />
-              <line x1={building.x + 42} y1={pierY} x2={building.x + 42} y2={pierY + 12} stroke="#e2e8f0" strokeWidth={1} opacity={0.7} />
-              <line x1={building.x + 64} y1={pierY} x2={building.x + 64} y2={pierY + 12} stroke="#e2e8f0" strokeWidth={1} opacity={0.7} />
-            </g>
-          );
-        })}
-        <text x={textX} y={building.y + building.height + 14} fill="#cbd5e1" fontSize={10} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-          {building.label}
-        </text>
-      </g>
-    );
-  }
-
-  const radius = building.radius ?? Math.round(Math.min(building.width, building.height) / 2);
-  const cx = building.x + radius;
-  const cy = building.y + radius;
-  const points = Array.from({ length: 8 }, (_, index) => {
-    const angle = (Math.PI / 4) * index + Math.PI / 8;
-    return `${cx + Math.cos(angle) * radius},${cy + Math.sin(angle) * radius}`;
-  }).join(" ");
-
-  return (
-    <g {...commonProps} transform={groupTransform}>
-      <polygon points={points} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 2} />
-      <text x={textX ?? cx} y={textY ?? cy} fill="#ecf3fb" fontSize={11} textAnchor="middle" dominantBaseline="middle" style={textStyle}>
-        {building.label}
       </text>
     </g>
   );
@@ -589,16 +214,18 @@ export function TitleStamp({ mapState, selected = false, onPointerDown }: Overla
   );
 }
 
-const noop = () => {};
 
 /** Та же отрисовка, что в редакторе, но без выделения и перетаскивания. */
-export function MapPreview({ mapState, label }: { mapState: MapState; label: string }) {
+export function MapPreview({ mapState, label, highlight }: { mapState: MapState; label: string; highlight?: string }) {
+  const highlighted = highlight ? mapState.buildings.find((building) => building.id === highlight) : undefined;
+  const junctions = useMemo(() => findJunctions(mapState.roads), [mapState.roads]);
   return (
     <svg viewBox="0 0 2200 1700" role="img" aria-label={label}>
       <MapBackdrop />
       {mapState.roads.map((road) => (
         <Road key={road.id} road={road} selected={false} onSelect={noop} onDragStart={noop} />
       ))}
+      <Junctions junctions={junctions} />
       {mapState.zones.map((zone) => (
         <ZoneBlock key={zone.id} zone={zone} selected={false} onSelect={noop} onPointerDown={noop} />
       ))}
@@ -612,6 +239,70 @@ export function MapPreview({ mapState, label }: { mapState: MapState; label: str
       {mapState.overlays.showLegend ? <Legend mapState={mapState} /> : null}
       <CompassAndScale />
       {mapState.overlays.showTitleStamp ? <TitleStamp mapState={mapState} /> : null}
+      {highlighted ? <SelectionFrame x={highlighted.x} y={highlighted.y} width={highlighted.width} height={highlighted.height} rotation={highlighted.rotation} /> : null}
     </svg>
+  );
+}
+
+const ROAD_FILL = "#4a5568";
+
+/** Перекрёсток: чистая площадка без осевой разметки и «зебра» на каждом луче. */
+export function Junctions({ junctions }: { junctions: Junction[] }) {
+  return (
+    <g pointerEvents="none">
+      {junctions.map((junction) => {
+        const half = junction.size / 2;
+        return (
+          <g key={`${junction.x}-${junction.y}`}>
+            <circle cx={junction.x} cy={junction.y} r={half + 3} fill={ROAD_FILL} />
+            {junction.arms.map((arm, index) => {
+              const offset = half + 11;
+              const stripes = Math.max(2, Math.floor((arm.width - 4) / 5));
+              const px = junction.x + Math.cos(arm.angle) * offset;
+              const py = junction.y + Math.sin(arm.angle) * offset;
+              return (
+                <g key={index} transform={`translate(${px} ${py}) rotate(${(arm.angle * 180) / Math.PI})`}>
+                  {Array.from({ length: stripes }, (_, stripe) => (
+                    <rect key={stripe} x={-5} y={-arm.width / 2 + 2 + (stripe * (arm.width - 4)) / stripes + 0.75} width={10} height={Math.max(1.5, (arm.width - 4) / stripes - 2.5)} fill="#e2e8f0" opacity={0.85} />
+                  ))}
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Выделение в духе чертежа: рамка с засечками по углам и размерная подпись «ширина × высота». */
+export function SelectionFrame({ x, y, width, height, rotation = 0, label }: { x: number; y: number; width: number; height: number; rotation?: number; label?: string }) {
+  const pad = 8;
+  const left = x - pad;
+  const top = y - pad;
+  const right = x + width + pad;
+  const bottom = y + height + pad;
+  const tick = Math.min(16, (width + pad * 2) / 3, (height + pad * 2) / 3);
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const corners = [
+    `M ${left} ${top + tick} V ${top} H ${left + tick}`,
+    `M ${right - tick} ${top} H ${right} V ${top + tick}`,
+    `M ${right} ${bottom - tick} V ${bottom} H ${right - tick}`,
+    `M ${left + tick} ${bottom} H ${left} V ${bottom - tick}`,
+  ].join(" ");
+  // Подпись размеров всегда горизонтальна и стоит над габаритом повёрнутой рамки.
+  const angle = (rotation * Math.PI) / 180;
+  const halfHeight = Math.abs(Math.sin(angle)) * (right - left) / 2 + Math.abs(Math.cos(angle)) * (bottom - top) / 2;
+  return (
+    <g pointerEvents="none">
+      <g transform={rotation ? `rotate(${rotation} ${cx} ${cy})` : undefined}>
+        <rect x={left} y={top} width={right - left} height={bottom - top} fill="none" stroke={ACCENT} strokeWidth={1.2} strokeDasharray="4 5" opacity={0.8} />
+        <path d={corners} fill="none" stroke={ACCENT} strokeWidth={3} strokeLinecap="square" />
+      </g>
+      <text x={cx} y={cy - halfHeight - 10} fill={ACCENT} fontSize={12} textAnchor="middle" style={textStyle} {...labelHalo}>
+        {label ?? `${Math.round(width)} × ${Math.round(height)}`}
+      </text>
+    </g>
   );
 }

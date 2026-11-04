@@ -9,6 +9,7 @@ import {
   decodeMapState,
   encodeMapState,
   ensureMapState,
+  findJunctions,
   loadStartState,
   nudgeTarget,
   pasteItem,
@@ -175,5 +176,31 @@ describe("editing helpers", () => {
     const ownBuildings = state.buildings.filter((entry) => entry.zoneId === zone.id).length;
     expect(result.state.zones).toHaveLength(state.zones.length + 1);
     expect(result.state.buildings.filter((entry) => entry.zoneId === "zone-7")).toHaveLength(ownBuildings);
+  });
+});
+
+describe("findJunctions", () => {
+  it("finds a crossing and a T-junction, with arms only where the road goes on", () => {
+    const horizontal = { id: "h", width: 20, points: [{ x: 0, y: 100 }, { x: 400, y: 100 }] };
+    const vertical = { id: "v", width: 20, points: [{ x: 200, y: 0 }, { x: 200, y: 300 }] };
+    const branch = { id: "b", width: 16, points: [{ x: 300, y: 106 }, { x: 300, y: 300 }] };
+    const junctions = findJunctions([horizontal, vertical, branch]);
+
+    expect(junctions).toHaveLength(2);
+    const cross = junctions.find((entry) => entry.x === 200)!;
+    expect(cross.y).toBe(100);
+    expect(cross.arms).toHaveLength(4);
+    const tee = junctions.find((entry) => entry.x === 300)!;
+    expect(tee.arms).toHaveLength(3);
+  });
+
+  it("ignores parallel roads and the joints inside one road", () => {
+    const bent = { id: "z", width: 18, points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }] };
+    const parallel = { id: "p", width: 18, points: [{ x: 0, y: 200 }, { x: 100, y: 200 }] };
+    expect(findJunctions([bent, parallel])).toEqual([]);
+  });
+
+  it("finds the crossings of the example city", () => {
+    expect(findJunctions(initialMapState.roads).length).toBeGreaterThan(10);
   });
 });

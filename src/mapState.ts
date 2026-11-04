@@ -360,3 +360,58 @@ export function loadStartState(storage: KeyValueStorage, search: string): MapSta
   const saved = readJson(storage, STATE_KEY);
   return saved ? ensureMapState(saved) : structuredClone(initialMapState);
 }
+
+export type JunctionArm = { angle: number; width: number; reach: number };
+export type Junction = { x: number; y: number; size: number; arms: JunctionArm[] };
+
+const JUNCTION_MERGE = 14;
+
+/** Перекрёстки: точки, где отрезки разных дорог пересекаются или упираются друг в друга. */
+export function findJunctions(roads: RoadData[]): Junction[] {
+  const segments = roads.flatMap((road, roadIndex) =>
+    road.points.slice(1).map((point, index) => ({ a: road.points[index], b: point, width: road.width, roadIndex, index })),
+  );
+  const found: Array<{ x: number; y: number; segments: Set<number> }> = [];
+
+  for (let i = 0; i < segments.length; i += 1) {
+    for (let j = i + 1; j < segments.length; j += 1) {
+      const s1 = segments[i];
+      const s2 = segments[j];
+      if (s1.roadIndex === s2.roadIndex && Math.abs(s1.index - s2.index) <= 1) continue;
+      const rx = s1.b.x - s1.a.x;
+      const ry = s1.b.y - s1.a.y;
+      const sx = s2.b.x - s2.a.x;
+      const sy = s2.b.y - s2.a.y;
+      const denominator = rx * sy - ry * sx;
+      if (Math.abs(denominator) < 1e-6) continue;
+      const qx = s2.a.x - s1.a.x;
+      const qy = s2.a.y - s1.a.y;
+      const t = (qx * sy - qy * sx) / denominator;
+      const u = (qx * ry - qy * rx) / denominator;
+      // Небольшой допуск: дорога, не дотянутая до другой на полширины, всё равно примыкает к ней.
+      const tTol = (Math.max(s2.width / 2, 6) + 2) / Math.hypot(rx, ry);
+      const uTol = (Math.max(s1.width / 2, 6) + 2) / Math.hypot(sx, sy);
+      if (t < -tTol || t > 1 + tTol || u < -uTol || u > 1 + uTol) continue;
+      const x = s1.a.x + rx * Math.max(0, Math.min(1, t));
+      const y = s1.a.y + ry * Math.max(0, Math.min(1, t));
+      const existing = found.find((entry) => Math.hypot(entry.x - x, entry.y - y) < JUNCTION_MERGE);
+      if (existing) {
+        existing.segments.add(i);
+        existing.segments.add(j);
+      } else {
+        found.push({ x, y, segments: new Set([i, j]) });
+      }
+    }
+  }
+
+  return found.map(({ x, y, segments: ids }) => {
+    const involved = [...ids].map((id) => segments[id]);
+    const size = Math.max(...involved.map((segment) => segment.width));
+    const arms = involved.flatMap((segment) =>
+      [segment.a, segment.b]
+        .map((end) => ({ angle: Math.atan2(end.y - y, end.x - x), width: segment.width, reach: Math.hypot(end.x - x, end.y - y) }))
+        .filter((arm) => arm.reach > size / 2 + 20),
+    );
+    return { x, y, size, arms };
+  });
+}
