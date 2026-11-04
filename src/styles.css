@@ -938,6 +938,39 @@ kbd {
   .ed-meta {
     display: none;
   }
+
+  /* Панель инструментов должна помещаться в одну строку: быстрые кнопки остаются иконками с подсказкой. */
+  .tool-add {
+    gap: 4px;
+  }
+
+  .tool-add .btn {
+    width: 32px;
+    padding: 0;
+  }
+
+  .tool-add .tool-label {
+    display: none;
+  }
+}
+
+@media (max-width: 1280px) {
+  .ed-toolbar .segmented .tool-label {
+    display: none;
+  }
+
+  .ed-toolbar .segmented button {
+    width: 32px;
+    padding: 0;
+  }
+
+  .ed-status {
+    display: none;
+  }
+
+  .ed-title {
+    margin-right: auto;
+  }
 }
 
 @media (max-width: 1180px) {

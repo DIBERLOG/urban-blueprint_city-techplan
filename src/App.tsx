@@ -1095,8 +1095,8 @@ export default function App({ onHome }: { onHome: () => void }) {
             <button type="button" className="icon-btn" title="Дублировать · Ctrl+D" onClick={duplicateSelected} disabled={!objectSelected}><CopyPlus size={16} /></button>
           </div>
           <div className="tool-group segmented" role="group" aria-label="Режим">
-            <button type="button" className={toolMode === "select" ? "is-active" : ""} onClick={() => setToolMode("select")}><MousePointer2 size={16} />Выбор</button>
-            <button type="button" className={toolMode === "delete" ? "is-active is-danger" : ""} onClick={() => setToolMode(toolMode === "delete" ? "select" : "delete")}><Eraser size={16} />Удаление</button>
+            <button type="button" className={toolMode === "select" ? "is-active" : ""} title="Выбор" aria-label="Выбор" onClick={() => setToolMode("select")}><MousePointer2 size={16} /><span className="tool-label">Выбор</span></button>
+            <button type="button" className={toolMode === "delete" ? "is-active is-danger" : ""} title="Удаление: щелчок по объекту удаляет его" aria-label="Удаление" onClick={() => setToolMode(toolMode === "delete" ? "select" : "delete")}><Eraser size={16} /><span className="tool-label">Удаление</span></button>
           </div>
           <label className="tool-toggle" title="Разрешить зданиям заходить на дороги">
             <input type="checkbox" checked={ignoreRoads} onChange={(event) => setIgnoreRoads(event.target.checked)} />
@@ -1104,10 +1104,10 @@ export default function App({ onHome }: { onHome: () => void }) {
           </label>
           <div className="tool-spacer" />
           <div className="tool-group tool-add">
-            <button type="button" className="btn" onClick={addZone}><SquareDashed size={16} />Зона</button>
-            <button type="button" className="btn" onClick={() => createRoad(false)}><Spline size={16} />Дорога</button>
-            <button type="button" className="btn" onClick={() => addObject("rect")}><Building2 size={16} />Здание</button>
-            <button type="button" className="btn" onClick={() => addObject("park")}><Trees size={16} />Парк</button>
+            <button type="button" className="btn" title="Добавить зону" aria-label="Добавить зону" onClick={addZone}><SquareDashed size={16} /><span className="tool-label">Зона</span></button>
+            <button type="button" className="btn" title="Добавить дорогу" aria-label="Добавить дорогу" onClick={() => createRoad(false)}><Spline size={16} /><span className="tool-label">Дорога</span></button>
+            <button type="button" className="btn" title="Добавить здание" aria-label="Добавить здание" onClick={() => addObject("rect")}><Building2 size={16} /><span className="tool-label">Здание</span></button>
+            <button type="button" className="btn" title="Добавить парк" aria-label="Добавить парк" onClick={() => addObject("park")}><Trees size={16} /><span className="tool-label">Парк</span></button>
           </div>
           <div className="menu-anchor" ref={addMenuRef}>
             <button type="button" className="btn btn-accent" aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)}>
