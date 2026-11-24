@@ -37,4 +37,8 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          # Target server (repository variables); empty means the defaults in deploy.sh.
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          SITE_IP: ${{ vars.SITE_IP }}
         run: bash .github/scripts/deploy.sh dist urban.diberlog.ru
